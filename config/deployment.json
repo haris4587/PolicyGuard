@@ -1,0 +1,18 @@
+{
+  "network": "GenLayer Studionet",
+  "chainId": 61999,
+  "rpcUrl": "https://studio.genlayer.com/api",
+  "explorerUrl": "https://explorer-studio.genlayer.com",
+  "contractAddress": "",
+  "contractSourceCommit": "",
+  "contractSourceSha256": "",
+  "deploymentTransaction": "",
+  "demoBootstrapTransaction": "",
+  "missingAuditEvaluationTransaction": "",
+  "auditRemediationTransaction": "",
+  "correctedEvaluationTransaction": "",
+  "authorizationTransaction": "",
+  "demoProposalId": "policyguard-demo-35000",
+  "websiteUrl": "https://policyguard.ansaf1st33.chatgpt.site",
+  "deploymentStatus": "PENDING"
+}

@@ -1,0 +1,41 @@
+{
+  "evidenceCommit": "",
+  "documents": [
+    {
+      "id": "dao-policy-v1",
+      "type": "POLICY",
+      "path": "demo/policy/dao-grant-policy-v1.md",
+      "sha256": "62957ed2e2de08939500b3b5a19f2d95102ce458d6a4bd10535a90b9fa38190c"
+    },
+    {
+      "id": "grant-35000",
+      "type": "PROPOSAL",
+      "path": "demo/proposals/grant-35000.md",
+      "sha256": "7bd84b46f443e2317bff343d544843309a88d5818f8ffe83979ed438f2c0b5bc"
+    },
+    {
+      "id": "grant-15000",
+      "type": "PROPOSAL",
+      "path": "demo/proposals/grant-15000.md",
+      "sha256": "d2d7cb9445fe412c139dc7880569e98033bc6419b1ccd77fe768174f76e1597a"
+    },
+    {
+      "id": "reviewer-approvals",
+      "type": "APPROVAL_BUNDLE",
+      "path": "demo/evidence/reviewer-approvals.md",
+      "sha256": "22d8480e63c683e358a7e2add341206fd487f2592b337b76654ce2a697e2276f"
+    },
+    {
+      "id": "security-audit",
+      "type": "AUDIT",
+      "path": "demo/evidence/security-audit.md",
+      "sha256": "5bb64218abd8cb5896184328be586722a1d62e46ec363be40c803ba36e528f71"
+    },
+    {
+      "id": "budget-evidence",
+      "type": "BUDGET",
+      "path": "demo/evidence/budget-evidence.md",
+      "sha256": "c4883467e7b54ce45422ce277c9037fafe505c65ffedcf8c0d2ac45501aa0697"
+    }
+  ]
+}
