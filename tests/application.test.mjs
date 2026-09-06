@@ -1,0 +1,35 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+test("production worker renders PolicyGuard metadata and application copy", async () => {
+  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
+  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
+  const { default: worker } = await import(workerUrl.href);
+  const response = await worker.fetch(
+    new Request("http://localhost/", { headers: { accept: "text/html" } }),
+    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+    { waitUntil() {}, passThroughOnException() {} },
+  );
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /PolicyGuard/);
+  assert.match(html, /Turn written policy into an enforceable decision/);
+  assert.match(html, /GenLayer Policy Compliance/);
+  assert.doesNotMatch(html, /Starter Project/);
+});
+
+test("wallet client uses real GenLayer methods and never labels demo data live", async () => {
+  const source = await readFile(new URL("../components/policyguard-app.tsx", import.meta.url), "utf8");
+  for (const token of ["eth_requestAccounts", "wallet_switchEthereumChain", "readContract", "writeContract", "TransactionStatus.FINALIZED", "leaderOnly: false"]) {
+    assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  assert.match(source, /No sample verdict is presented as contract state/);
+});
+
+test("deployment configuration targets stable Studionet", async () => {
+  const deployment = JSON.parse(await readFile(new URL("../config/deployment.json", import.meta.url), "utf8"));
+  assert.equal(deployment.chainId, 61999);
+  assert.equal(deployment.rpcUrl, "https://studio.genlayer.com/api");
+  assert.equal(deployment.demoProposalId, "policyguard-demo-35000");
+});
