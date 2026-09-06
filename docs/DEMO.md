@@ -19,7 +19,8 @@ A DAO's written policy blocks a USD 35,000 grant because a required audit is mis
 7. Append the audit evidence through the wallet-signed action.
 8. Start Full Consensus again.
 9. Show both evaluations in the immutable timeline.
-10. If #2 is `COMPLIANT`, authorize the action and show the binding digest.
+10. Show evaluation #2 as `COMPLIANT`, authorize the action, and show the binding digest.
+11. Show the final `EXECUTED` state and immutable execution reference.
 
 ## Expected lifecycle evidence
 
@@ -29,7 +30,10 @@ PENDING_EVIDENCE
   → PENDING_EVIDENCE (audit appended; input revision increments)
   → COMPLIANT (evaluation #2; previous evaluation linked)
   → AUTHORIZED (latest binding rechecked)
+  → EXECUTED (authorized executor records completion)
 ```
+
+This exact lifecycle is live on Studionet at contract [`0xdD7D1EaC2A2F09602734BC7D6Bb1897ED4487964`](https://explorer-studio.genlayer.com/address/0xdD7D1EaC2A2F09602734BC7D6Bb1897ED4487964). The missing-audit evaluation is transaction [`0xbf95…39d2`](https://explorer-studio.genlayer.com/tx/0xbf95352e985cb1a454baaf44c52e260aefecbffc3fc1ca0186496cddd4e439d2); the corrected evaluation is [`0xeb42…b778`](https://explorer-studio.genlayer.com/tx/0xeb42736834489e3402f50ae945e0e6ca1a6972c892e0544d9080082b49f8b778).
 
 ## What the demo proves
 

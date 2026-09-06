@@ -4,7 +4,7 @@
 
 PolicyGuard lets an organization commit versioned, human-written policies and uses GenLayer validators to decide whether a proposed action complies with those policies and authenticated real-world evidence. Deterministic contract logic binds the result to exact policy, proposal, evidence, and approval digests; a stale verdict can never authorize execution.
 
-> Builder Project status: application and contract implementation complete; the verified Studionet deployment fields in this repository are updated only after the corresponding transactions finalize.
+> Builder Project status: complete and live. The contract, both Full Consensus verdicts, authorization, execution record, and production frontend are verified on GenLayer Studionet.
 
 ## Live surfaces
 
@@ -13,11 +13,12 @@ PolicyGuard lets an organization commit versioned, human-written policies and us
 | Production application | [policyguard.ansaf1st33.chatgpt.site](https://policyguard.ansaf1st33.chatgpt.site) |
 | GitHub repository | [haris4587/PolicyGuard](https://github.com/haris4587/PolicyGuard) |
 | Network | GenLayer Studionet · chain `61999` |
-| Contract | Pending verified deployment |
-| Deployment transaction | Pending verified deployment |
-| Full Consensus transaction | Pending verified evaluation |
+| Contract | [`0xdD7D…7964`](https://explorer-studio.genlayer.com/address/0xdD7D1EaC2A2F09602734BC7D6Bb1897ED4487964) |
+| Deployment transaction | [`0x0bb9…b6e3`](https://explorer-studio.genlayer.com/tx/0x0bb9dbcd8741512b277c1b83f87eaf9fda07ead0c9231802884dd7480d40b6e3) |
+| Missing-audit Full Consensus | [`0xbf95…39d2`](https://explorer-studio.genlayer.com/tx/0xbf95352e985cb1a454baaf44c52e260aefecbffc3fc1ca0186496cddd4e439d2) |
+| Corrected Full Consensus | [`0xeb42…b778`](https://explorer-studio.genlayer.com/tx/0xeb42736834489e3402f50ae945e0e6ca1a6972c892e0544d9080082b49f8b778) |
 
-The frontend never labels preview data as a live verdict. Contract-derived views remain empty, and live writes remain disabled, until a verified contract address is committed to `config/deployment.json`.
+The frontend never labels preview data as a live verdict. It reads finalized state from the verified address in `config/deployment.json`; every live write is signed by the connected browser wallet.
 
 ## Primary demonstration
 
@@ -27,14 +28,14 @@ The committed policy says:
 
 The demo proposal requests USD 35,000 and includes three approvals. Its first evidence set intentionally omits the security audit.
 
-Expected finalized result:
+Verified finalized evaluation #1:
 
 ```text
 NON_COMPLIANT
 Required security audit is missing.
 ```
 
-The action remains blocked. A published, SHA-256-bound audit can then be appended and a second Full Consensus evaluation started. Evaluation #1 remains immutable. Authorization is possible only if evaluation #2 finalizes as `COMPLIANT` and its complete input binding still matches current state.
+The action remained blocked. After the SHA-256-bound audit was appended, evaluation #2 finalized as `COMPLIANT`, linked back to evaluation #1, and preserved both verdicts in the immutable history. The contract then recomputed the complete binding, authorized evaluation #2, and recorded the demo action as `EXECUTED`.
 
 ## Why this needs GenLayer
 

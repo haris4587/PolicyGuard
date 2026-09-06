@@ -11,6 +11,16 @@ PolicyGuard targets **stable GenLayer Studionet**, not the release-candidate Stu
 | SDK | `genlayer-js@1.1.8` |
 | Contract | `contracts/policy_guard.py` |
 
+## Verified live deployment
+
+| Item | Value |
+|---|---|
+| Contract | [`0xdD7D1EaC2A2F09602734BC7D6Bb1897ED4487964`](https://explorer-studio.genlayer.com/address/0xdD7D1EaC2A2F09602734BC7D6Bb1897ED4487964) |
+| Deployment | [`0x0bb9dbcd8741512b277c1b83f87eaf9fda07ead0c9231802884dd7480d40b6e3`](https://explorer-studio.genlayer.com/tx/0x0bb9dbcd8741512b277c1b83f87eaf9fda07ead0c9231802884dd7480d40b6e3) |
+| Missing-audit evaluation | [`0xbf95352e985cb1a454baaf44c52e260aefecbffc3fc1ca0186496cddd4e439d2`](https://explorer-studio.genlayer.com/tx/0xbf95352e985cb1a454baaf44c52e260aefecbffc3fc1ca0186496cddd4e439d2) · `NON_COMPLIANT` |
+| Corrected evaluation | [`0xeb42736834489e3402f50ae945e0e6ca1a6972c892e0544d9080082b49f8b778`](https://explorer-studio.genlayer.com/tx/0xeb42736834489e3402f50ae945e0e6ca1a6972c892e0544d9080082b49f8b778) · `COMPLIANT` |
+| Final state | `EXECUTED` |
+
 ## Pre-deployment checks
 
 ```bash
@@ -76,7 +86,7 @@ Call `add_evidence`:
 | Field | Value |
 |---|---|
 | `proposal_id` | `policyguard-demo-35000` |
-| `evidence_id` | `audit-remediation-001` |
+| `evidence_id` | `security-audit-v1` |
 | `evidence_type` | `AUDIT` |
 | `evidence_url` | commit-pinned `demo/evidence/security-audit.md` raw URL |
 | `evidence_sha256` | `5bb64218abd8cb5896184328be586722a1d62e46ec363be40c803ba36e528f71` |

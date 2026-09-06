@@ -32,4 +32,12 @@ test("deployment configuration targets stable Studionet", async () => {
   assert.equal(deployment.chainId, 61999);
   assert.equal(deployment.rpcUrl, "https://studio.genlayer.com/api");
   assert.equal(deployment.demoProposalId, "policyguard-demo-35000");
+  assert.match(deployment.contractAddress, /^0x[0-9a-fA-F]{40}$/);
+  assert.match(deployment.deploymentTransaction, /^0x[0-9a-fA-F]{64}$/);
+  assert.match(deployment.missingAuditEvaluationTransaction, /^0x[0-9a-fA-F]{64}$/);
+  assert.match(deployment.correctedEvaluationTransaction, /^0x[0-9a-fA-F]{64}$/);
+  assert.equal(deployment.missingAuditVerdict, "NON_COMPLIANT");
+  assert.equal(deployment.correctedVerdict, "COMPLIANT");
+  assert.equal(deployment.finalProposalState, "EXECUTED");
+  assert.equal(deployment.deploymentStatus, "FINALIZED");
 });
