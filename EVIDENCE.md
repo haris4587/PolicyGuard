@@ -20,8 +20,8 @@ This file is an append-only project evidence index. Placeholder values are not c
 | Commitment | Value |
 |---|---|
 | Source path | `contracts/policy_guard.py` |
-| Source commit | Pending final deployed source commit |
-| Source SHA-256 | Pending final deployed source digest |
+| Evidence source commit | [`d37632e7584e1980578c2886b2e1264ba1a61648`](https://github.com/haris4587/PolicyGuard/commit/d37632e7584e1980578c2886b2e1264ba1a61648) |
+| Contract source SHA-256 at evidence commit | `317a0e70ac3ad51d1960f7a4d3ffb255292d34ea171374fe8363767c2b07ce8e` |
 | Deployment status | Pending |
 
 ## Stable demo inputs
@@ -35,7 +35,14 @@ This file is an append-only project evidence index. Placeholder values are not c
 | Published security audit | `5bb64218abd8cb5896184328be586722a1d62e46ec363be40c803ba36e528f71` |
 | Budget evidence | `c4883467e7b54ce45422ce277c9037fafe505c65ffedcf8c0d2ac45501aa0697` |
 
-The immutable evidence commit and exact raw links are recorded after the first GitHub source publication in `demo/manifest.json`.
+The immutable evidence commit is recorded in `demo/manifest.json`. Exact validator inputs:
+
+- [DAO grant policy v1](https://raw.githubusercontent.com/haris4587/PolicyGuard/d37632e7584e1980578c2886b2e1264ba1a61648/demo/policy/dao-grant-policy-v1.md)
+- [USD 35,000 grant proposal](https://raw.githubusercontent.com/haris4587/PolicyGuard/d37632e7584e1980578c2886b2e1264ba1a61648/demo/proposals/grant-35000.md)
+- [USD 15,000 grant proposal](https://raw.githubusercontent.com/haris4587/PolicyGuard/d37632e7584e1980578c2886b2e1264ba1a61648/demo/proposals/grant-15000.md)
+- [Three-reviewer approval bundle](https://raw.githubusercontent.com/haris4587/PolicyGuard/d37632e7584e1980578c2886b2e1264ba1a61648/demo/evidence/reviewer-approvals.md)
+- [Published security audit](https://raw.githubusercontent.com/haris4587/PolicyGuard/d37632e7584e1980578c2886b2e1264ba1a61648/demo/evidence/security-audit.md)
+- [Budget evidence](https://raw.githubusercontent.com/haris4587/PolicyGuard/d37632e7584e1980578c2886b2e1264ba1a61648/demo/evidence/budget-evidence.md)
 
 ## Required verdict record
 

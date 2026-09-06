@@ -14,7 +14,7 @@ PolicyGuard is a complete wallet-connected application, deployed Intelligent Con
 
 PolicyGuard turns human-written organizational rules into auditable execution gates. Organizations register versioned policies with SHA-256 commitments, create proposals, collect duplicate-protected reviewer approvals, and append real-world evidence. GenLayer validators independently fetch the committed bytes and interpret whether the action complies, returning a normalized COMPLIANT, NON_COMPLIANT, or NEEDS_REVIEW verdict with reasons, requirements, citations, evidence digests, and quality scoring. Every recheck preserves earlier results. Authorization is impossible unless the latest finalized compliant verdict still matches the current policy version, proposal, evidence set, approval set, and input revision. The live demo blocks a USD 35,000 DAO grant when its required security audit is missing, then supports audit remediation and a new Full Consensus evaluation.
 
-Character count: 879 including spaces (recheck if edited).
+Character count: 877 including spaces.
 
 ## Tags
 
@@ -33,10 +33,10 @@ Use one URL per platform link field:
 | Contract | Pending verified address URL |
 | Deployment evidence | https://github.com/haris4587/PolicyGuard/blob/main/EVIDENCE.md |
 | Full Consensus transaction | Pending verified transaction URL |
-| Policy | Pending commit-pinned raw URL |
-| Proposal | Pending commit-pinned raw URL |
-| Reviewer approvals | Pending commit-pinned raw URL |
-| Security audit | Pending commit-pinned raw URL |
+| Policy | https://raw.githubusercontent.com/haris4587/PolicyGuard/d37632e7584e1980578c2886b2e1264ba1a61648/demo/policy/dao-grant-policy-v1.md |
+| Proposal | https://raw.githubusercontent.com/haris4587/PolicyGuard/d37632e7584e1980578c2886b2e1264ba1a61648/demo/proposals/grant-35000.md |
+| Reviewer approvals | https://raw.githubusercontent.com/haris4587/PolicyGuard/d37632e7584e1980578c2886b2e1264ba1a61648/demo/evidence/reviewer-approvals.md |
+| Security audit | https://raw.githubusercontent.com/haris4587/PolicyGuard/d37632e7584e1980578c2886b2e1264ba1a61648/demo/evidence/security-audit.md |
 
 ## Evidence summary
 
