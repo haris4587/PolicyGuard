@@ -27,6 +27,20 @@ test("wallet client uses real GenLayer methods and never labels demo data live",
   assert.match(source, /No sample verdict is presented as contract state/);
 });
 
+test("fresh proposal actions use the active proposal and expose reviewer-roster setup", async () => {
+  const source = await readFile(new URL("../components/policyguard-app.tsx", import.meta.url), "utf8");
+  assert.match(source, /const \[activeProposalId, setActiveProposalId\]/);
+  assert.match(source, /"add_reviewer"/);
+  assert.match(source, /Load demo case/);
+  for (const action of ["start_evaluation", "add_evidence", "authorize_action", "execute_action"]) {
+    assert.match(source, new RegExp(`"${action}"[^\\n]*activeProposalId`));
+  }
+  assert.doesNotMatch(source, /start_evaluation", \[DEMO_ID\]/);
+  assert.doesNotMatch(source, /add_evidence", \[DEMO_ID/);
+  assert.doesNotMatch(source, /authorize_action", \[DEMO_ID\]/);
+  assert.doesNotMatch(source, /execute_action", \[DEMO_ID/);
+});
+
 test("deployment configuration targets stable Studionet", async () => {
   const deployment = JSON.parse(await readFile(new URL("../config/deployment.json", import.meta.url), "utf8"));
   assert.equal(deployment.chainId, 61999);

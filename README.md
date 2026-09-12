@@ -152,7 +152,7 @@ npm run typecheck
 npm test
 ```
 
-`npm test` performs contract syntax checks, 17 deterministic lifecycle/security tests, contract-control verification, evidence-hash verification, ESLint, a production build, and production-worker rendering/client-integrity tests.
+`npm test` performs contract syntax checks, 18 deterministic lifecycle/security tests, contract-control verification, evidence-hash verification, ESLint, a production build, and production-worker rendering/client-integrity tests.
 
 Run locally:
 

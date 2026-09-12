@@ -14,7 +14,7 @@ npm test
 | Layer | Command | Coverage |
 |---|---|---|
 | Contract syntax | `python3 -m py_compile contracts/policy_guard.py` | valid Python source |
-| Deterministic lifecycle model | `pytest -q tests/test_policyguard.py` | policy gates, duplicates, stale authorization, URLs, fallback, history |
+| Deterministic lifecycle model | `pytest -q tests/test_policyguard.py` | policy gates, fresh organization/policy/proposal workflow, duplicates, stale authorization, URLs, fallback, history |
 | Contract controls | `node scripts/verify-contract.mjs` | required lifecycle methods and GenLayer primitives |
 | Evidence integrity | `node scripts/verify-evidence.mjs` | manifest matches exact SHA-256 bytes |
 | Type safety | `npm run typecheck` | React/TypeScript client |
@@ -37,6 +37,7 @@ npm test
 | Stale verdict authorization | reject | yes |
 | Re-evaluation history | original result preserved | yes |
 | Unauthorized authorization/execution | reject | yes |
+| Fresh organization → policy → proposal → roster → evaluation → remediation → authorization → execution | `EXECUTED`, with both evaluations retained | yes |
 
 ## Studionet verification
 

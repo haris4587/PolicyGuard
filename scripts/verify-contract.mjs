@@ -4,6 +4,7 @@ const source = readFileSync(new URL("../contracts/policy_guard.py", import.meta.
 const required = [
   "class PolicyGuard(gl.Contract)",
   "def create_organization(",
+  "def add_reviewer(",
   "def register_policy_version(",
   "def create_proposal(",
   "def rebind_proposal_policy(",

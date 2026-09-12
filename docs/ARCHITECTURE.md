@@ -49,6 +49,12 @@ The validator compares decision-critical fields: status, source status, policy/p
 
 The React/Vite/TypeScript interface uses `genlayer-js@1.1.8`, the stable Studionet SDK line. Reads use `LATEST_FINAL`. Writes use the connected EIP-1193 MetaMask provider with `leaderOnly: false`, and the interface waits for both accepted and finalized lifecycle points while checking execution failure separately.
 
+The case desk keeps a separately loaded `activeProposalId`. Evaluation,
+remediation, authorization, execution, evidence, and reviewer-approval actions
+all use that loaded ID; the demo identifier is available only through an
+explicit demo-load/bootstrap control. Policy setup also exposes the contract's
+owner-only `add_reviewer` call and renders the loaded organization's roster.
+
 No secret account or generated private key is embedded. Disconnect clears only local application state because an application cannot silently revoke MetaMask permissions.
 
 ## Data commitments

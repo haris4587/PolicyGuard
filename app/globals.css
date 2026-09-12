@@ -209,6 +209,12 @@ svg { stroke-width: 1.8; }
 .proof > div:first-child { color: #294d5d; font-size: .79rem; font-weight: 680; }
 .proof > div:first-child svg { width: 15px; color: #159267; }
 .proof code { color: #647b85; font-size: .66rem; }
+.roster { display: grid; gap: .52rem; margin-top: .9rem; padding: .75rem; border: 1px solid #d8e5e9; border-radius: 10px; background: #f9fcfd; color: #294d5d; font-size: .76rem; }
+.roster strong { font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; color: #6a818a; }
+.roster p { margin: 0; color: #72868e; }
+.roster ul { display: grid; gap: .38rem; margin: 0; padding: 0; list-style: none; }
+.roster li { display: flex; align-items: center; gap: .4rem; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .68rem; overflow-wrap: anywhere; }
+.roster li svg { width: 14px; flex: 0 0 auto; color: #1b8490; }
 .missing, .auth-state, .reviewer { display: flex; align-items: center; gap: .72rem; padding: .78rem; border-radius: 11px; }
 .missing { color: #9f2d38; border: 1px solid #f0c6ca; background: #fff4f5; }
 .missing > svg, .auth-state > svg, .reviewer > svg { width: 21px; flex: 0 0 auto; }

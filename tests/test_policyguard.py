@@ -1,6 +1,7 @@
 import pytest
 
 from policyguard_model import (
+    WorkflowModel,
     binding_digest,
     can_authorize,
     evaluate_gate,
@@ -88,3 +89,75 @@ def test_sha256_validation():
     assert valid_sha256("a" * 64)
     assert not valid_sha256("A" * 64)
     assert not valid_sha256("abc")
+
+
+def test_new_organization_policy_proposal_completes_full_mapped_workflow():
+    """A fresh user-created case can traverse every mapped contract action."""
+
+    owner = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    reviewers = [
+        "0x1111111111111111111111111111111111111111",
+        "0x2222222222222222222222222222222222222222",
+        "0x3333333333333333333333333333333333333333",
+    ]
+    workflow = WorkflowModel()
+
+    workflow.create_organization(
+        organization_id="new-org",
+        name="New Organization",
+        owner=owner,
+    )
+    for reviewer in reviewers:
+        workflow.add_reviewer(
+            organization_id="new-org",
+            reviewer=reviewer,
+            caller=owner,
+        )
+    workflow.register_policy_version(
+        organization_id="new-org",
+        policy_id="new-policy",
+        version=1,
+        threshold_usd=20_000,
+        required_approvals=3,
+        required_document_types=["AUDIT"],
+        baseline_document_types=[],
+        caller=owner,
+    )
+    workflow.create_proposal(
+        proposal_id="new-proposal",
+        organization_id="new-org",
+        policy_id="new-policy",
+        policy_version=1,
+        amount_usd=35_000,
+        proposer=owner,
+        executor=owner,
+    )
+
+    for reviewer in reviewers:
+        workflow.approve_proposal(proposal_id="new-proposal", reviewer=reviewer)
+    first = workflow.start_evaluation(proposal_id="new-proposal")
+    assert first["status"] == "NON_COMPLIANT"
+    assert first["reason"] == "Required security audit is missing."
+
+    workflow.add_evidence(
+        proposal_id="new-proposal",
+        evidence_id="security-audit",
+        evidence_type="AUDIT",
+        caller=owner,
+    )
+    second = workflow.start_evaluation(proposal_id="new-proposal")
+    assert second["status"] == "COMPLIANT"
+    assert second["previous_evaluation_id"] == first["evaluation_id"]
+
+    authorization = workflow.authorize_action(proposal_id="new-proposal", caller=owner)
+    assert authorization["evaluation_id"] == second["evaluation_id"]
+    executed = workflow.execute_action(
+        proposal_id="new-proposal",
+        execution_reference="new-org-execution-001",
+        caller=owner,
+    )
+    assert executed["status"] == "EXECUTED"
+    assert workflow.proposals["new-proposal"]["evaluation_history"] == [
+        first["evaluation_id"],
+        second["evaluation_id"],
+    ]
