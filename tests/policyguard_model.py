@@ -254,7 +254,8 @@ class WorkflowModel:
         present_types = {item["type"] for item in proposal["evidence"]}
         missing_types = [item for item in required_types if item not in present_types]
         if missing_types:
-            verdict = {"status": "NON_COMPLIANT", "reason": "Required supporting documentation is missing."}
+            reason = "Required security audit is missing." if "AUDIT" in missing_types else "Required supporting documentation is missing."
+            verdict = {"status": "NON_COMPLIANT", "reason": reason}
         sequence = len(proposal["evaluation_history"]) + 1
         evaluation_id = f"{proposal_id}:e{sequence}"
         record = {
