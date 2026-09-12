@@ -1,4 +1,4 @@
-# v1.0.0
+# v1.1.0
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 
 """PolicyGuard: evidence-bound policy compliance on GenLayer.
@@ -20,6 +20,14 @@ from genlayer import *
 MAX_DOCUMENT_BYTES = 1_000_000
 MAX_CONTEXT_CHARS = 72_000
 MAX_ITEMS = 16
+MAX_EVIDENCE_WINDOW_SECONDS = 30 * 24 * 60 * 60
+MIN_REMEDIATION_WINDOW_SECONDS = 60
+SOURCE_SCOPES = (
+    "POLICY", "PROPOSAL", "EVIDENCE", "REVIEWER_APPROVAL",
+    "AUDIT", "BUDGET", "LEGAL", "SECURITY_REVIEW", "SPECIFICATION",
+    "RISK_ASSESSMENT", "APPROVAL_BUNDLE", "PROCUREMENT_QUOTE",
+    "IDENTITY", "DELIVERY_PROOF", "REMEDIATION", "CHALLENGE", "OTHER",
+)
 
 
 class PolicyGuard(gl.Contract):
@@ -32,6 +40,7 @@ class PolicyGuard(gl.Contract):
     authorizations: TreeMap[str, str]
     audit_events: TreeMap[str, str]
     evidence_fingerprints: TreeMap[str, str]
+    source_authorities: TreeMap[str, str]
 
     organization_ids: DynArray[str]
     proposal_ids: DynArray[str]
@@ -49,6 +58,7 @@ class PolicyGuard(gl.Contract):
     total_authorizations: u32
     total_executions: u32
     total_audit_events: u32
+    total_source_authorities: u32
 
     def __init__(self):
         self.owner = str(gl.message.sender_address)
@@ -62,6 +72,7 @@ class PolicyGuard(gl.Contract):
         self.total_authorizations = u32(0)
         self.total_executions = u32(0)
         self.total_audit_events = u32(0)
+        self.total_source_authorities = u32(0)
 
     # ------------------------------------------------------------------
     # Deterministic validation and commitments
@@ -108,24 +119,57 @@ class PolicyGuard(gl.Contract):
             raise gl.vm.UserError("Evidence commit must be a full 40-character Git commit SHA")
         return clean
 
-    def _require_https_url(self, value: str, label: str) -> str:
+    def _require_hostname(self, value: str, label: str) -> str:
+        clean = value.strip().lower()
+        if len(clean) < 4 or len(clean) > 253 or "." not in clean:
+            raise gl.vm.UserError(f"{label} must be a canonical DNS hostname")
+        if clean.startswith(".") or clean.endswith(".") or ".." in clean:
+            raise gl.vm.UserError(f"{label} must not contain empty DNS labels")
+        if any(char not in "abcdefghijklmnopqrstuvwxyz0123456789-." for char in clean):
+            raise gl.vm.UserError(f"{label} contains unsupported hostname characters")
+        for part in clean.split("."):
+            if not part or len(part) > 63 or part.startswith("-") or part.endswith("-"):
+                raise gl.vm.UserError(f"{label} contains an invalid DNS label")
+        if all(char in "0123456789." for char in clean):
+            raise gl.vm.UserError(f"{label} must be a DNS hostname, not an IP address")
+        blocked = ("localhost", "local", "internal", "invalid", "test")
+        if clean in blocked or any(clean.endswith("." + suffix) for suffix in blocked):
+            raise gl.vm.UserError(f"{label} must be a public DNS hostname")
+        return clean
+
+    def _https_hostname(self, value: str, label: str) -> str:
         clean = value.strip()
-        if not clean.lower().startswith("https://"):
+        if not clean.startswith("https://"):
             raise gl.vm.UserError(f"{label} must begin with https://")
         if len(clean) > 700 or "?" in clean or "#" in clean or "\\" in clean:
             raise gl.vm.UserError(f"{label} must be canonical and contain no query or fragment")
-        parts = clean.split("/")
-        host = parts[2].split(":", 1)[0].lower() if len(parts) > 2 else ""
-        blocked = (
-            "localhost", "127.0.0.1", "0.0.0.0", "169.254.", "10.",
-            "192.168.", "172.16.", "172.17.", "172.18.", "172.19.",
-            "172.20.", "172.21.", "172.22.", "172.23.", "172.24.",
-            "172.25.", "172.26.", "172.27.", "172.28.", "172.29.",
-            "172.30.", "172.31.",
-        )
-        if not host or len(parts) < 4 or any(host == item or host.startswith(item) for item in blocked):
+        slash = clean.find("/", len("https://"))
+        if slash < 0 or slash == len(clean) - 1:
             raise gl.vm.UserError(f"{label} must be a public HTTPS resource with a path")
+        authority = clean[len("https://"):slash]
+        if not authority or "@" in authority or ":" in authority or "%" in authority:
+            raise gl.vm.UserError(f"{label} must not contain credentials, ports, or encoded authority data")
+        return self._require_hostname(authority, label + " hostname")
+
+    def _require_https_url(self, value: str, label: str) -> str:
+        clean = value.strip()
+        self._https_hostname(clean, label)
         return clean
+
+    def _parse_source_scopes(self, value: str):
+        result = []
+        for raw in value.split(","):
+            scope = raw.strip().upper()
+            if not scope:
+                continue
+            if scope not in SOURCE_SCOPES:
+                raise gl.vm.UserError("Unsupported source-authority scope: " + scope)
+            if scope in result:
+                raise gl.vm.UserError("Duplicate source-authority scope: " + scope)
+            result.append(scope)
+        if not result or len(result) > MAX_ITEMS:
+            raise gl.vm.UserError("Source authority requires 1 to 16 distinct scopes")
+        return result
 
     def _parse_document_types(self, value: str, label: str):
         allowed = (
@@ -182,6 +226,104 @@ class PolicyGuard(gl.Contract):
     def _is_org_owner(self, org: dict) -> bool:
         return self._sender().lower() == str(org["owner"]).lower()
 
+    def _source_authority_key(self, org_id: str, authority_id: str) -> str:
+        return org_id + "|" + authority_id
+
+    def _load_source_authority(self, org_id: str, authority_id: str):
+        clean_id = self._require_id(authority_id, "Source authority ID")
+        key = self._source_authority_key(org_id, clean_id)
+        raw = self.source_authorities.get(key, "")
+        if raw == "":
+            raise gl.vm.UserError("Source authority was not found")
+        return key, json.loads(raw)
+
+    def _store_source_authority(
+        self,
+        org_id: str,
+        org: dict,
+        authority_id: str,
+        hostname: str,
+        issuer_wallet: str,
+        scopes,
+        demo: bool = False,
+    ) -> str:
+        clean_id = self._require_id(authority_id, "Source authority ID")
+        key = self._source_authority_key(org_id, clean_id)
+        if self.source_authorities.get(key, "") != "":
+            raise gl.vm.UserError("Source authority ID has already been used")
+        authority_ids = list(org.get("source_authority_ids", []))
+        if len(authority_ids) >= MAX_ITEMS:
+            raise gl.vm.UserError("Organization source-authority limit reached")
+        record = {
+            "authority_id": clean_id,
+            "organization_id": org_id,
+            "hostname": self._require_hostname(hostname, "Source hostname"),
+            "issuer_wallet": self._require_address(issuer_wallet, "Source issuer wallet").lower(),
+            "scopes": list(scopes),
+            "active": True,
+            "registered_by": self._sender(),
+            "registered_at": self._now(),
+            "revoked_at": 0,
+            "demo": demo,
+        }
+        self.source_authorities[key] = json.dumps(record, sort_keys=True)
+        authority_ids.append(clean_id)
+        org["source_authority_ids"] = authority_ids
+        org["source_authority_revision"] = int(org.get("source_authority_revision", 0)) + 1
+        self.total_source_authorities = u32(self.total_source_authorities + 1)
+        return clean_id
+
+    def _authenticate_source(self, org_id: str, url: str, scope: str, issuer_wallet: str) -> str:
+        _, org = self._load_org(org_id)
+        hostname = self._https_hostname(url, "Source URL")
+        issuer = self._require_address(issuer_wallet, "Source issuer wallet").lower()
+        required_scope = scope.upper()
+        for authority_id in org.get("source_authority_ids", []):
+            raw = self.source_authorities.get(self._source_authority_key(org_id, str(authority_id)), "")
+            if raw == "":
+                continue
+            authority = json.loads(raw)
+            scopes = list(authority.get("scopes", []))
+            scope_allowed = required_scope in scopes or (
+                required_scope not in ("POLICY", "PROPOSAL", "REVIEWER_APPROVAL") and "EVIDENCE" in scopes
+            )
+            if (
+                authority.get("active") is True
+                and str(authority.get("hostname", "")).lower() == hostname
+                and str(authority.get("issuer_wallet", "")).lower() == issuer
+                and scope_allowed
+            ):
+                return str(authority_id)
+        raise gl.vm.UserError("Source URL, issuer wallet, and scope are not authorized by the organization")
+
+    def _source_is_authenticated(self, source: dict) -> bool:
+        try:
+            key, authority = self._load_source_authority(
+                str(source["organization_id"]), str(source["source_authority_id"])
+            )
+            _ = key
+            required_scope = str(source["scope"]).upper()
+            scopes = list(authority.get("scopes", []))
+            scope_allowed = required_scope in scopes or (
+                required_scope not in ("POLICY", "PROPOSAL", "REVIEWER_APPROVAL") and "EVIDENCE" in scopes
+            )
+            return (
+                authority.get("active") is True
+                and str(authority.get("hostname", "")).lower() == self._https_hostname(str(source["url"]), "Source URL")
+                and str(authority.get("issuer_wallet", "")).lower() == str(source["issuer_wallet"]).lower()
+                and scope_allowed
+            )
+        except Exception:
+            return False
+
+    def _require_evidence_open(self, proposal: dict) -> None:
+        if self._now() >= int(proposal.get("evidence_deadline", 0)):
+            raise gl.vm.UserError("The evidence deadline has passed")
+
+    def _require_evidence_closed(self, proposal: dict) -> None:
+        if self._now() < int(proposal.get("evidence_deadline", 0)):
+            raise gl.vm.UserError("Reliable adjudication cannot begin before the evidence deadline")
+
     def _proposal_content_digest(self, payload: dict) -> str:
         canonical = {
             "proposal_id": payload["proposal_id"],
@@ -194,6 +336,9 @@ class PolicyGuard(gl.Contract):
             "proposal_url": payload["proposal_url"],
             "proposal_file_sha256": payload["proposal_file_sha256"],
             "authorized_executor": str(payload["authorized_executor"]).lower(),
+            "proposal_source_authority_id": payload["proposal_source_authority_id"],
+            "evidence_deadline": payload["evidence_deadline"],
+            "deadline_revision": payload["deadline_revision"],
         }
         return self._canonical_hash(canonical)
 
@@ -208,6 +353,8 @@ class PolicyGuard(gl.Contract):
                     "type": item["type"],
                     "url": item["url"],
                     "sha256": item["sha256"],
+                    "source_authority_id": item["source_authority_id"],
+                    "issuer_wallet": str(item["issuer_wallet"]).lower(),
                 })
         items.sort(key=lambda item: str(item["evidence_id"]))
         return self._canonical_hash(items)
@@ -223,9 +370,29 @@ class PolicyGuard(gl.Contract):
                     "proof_url": item["proof_url"],
                     "proof_sha256": item["proof_sha256"],
                     "mode": item["mode"],
+                    "source_authority_id": item["source_authority_id"],
+                    "issuer_wallet": str(item["issuer_wallet"]).lower(),
                 })
         items.sort(key=lambda item: str(item["reviewer"]))
         return self._canonical_hash(items)
+
+    def _source_authority_digest(self, proposal: dict, policy: dict) -> str:
+        sources = self._collect_sources(proposal, policy)
+        records = []
+        for source in sources:
+            raw = self.source_authorities.get(
+                self._source_authority_key(proposal["organization_id"], str(source["source_authority_id"])), ""
+            )
+            authority = json.loads(raw) if raw != "" else {}
+            records.append({
+                "authority_id": source["source_authority_id"],
+                "hostname": authority.get("hostname", ""),
+                "issuer_wallet": str(authority.get("issuer_wallet", "")).lower(),
+                "scopes": authority.get("scopes", []),
+                "active": authority.get("active") is True,
+            })
+        records.sort(key=lambda item: str(item["authority_id"]))
+        return self._canonical_hash(records)
 
     def _binding_digest(self, proposal: dict, policy: dict) -> str:
         return self._canonical_hash({
@@ -238,6 +405,9 @@ class PolicyGuard(gl.Contract):
             "approval_set_digest": self._approval_set_digest(proposal),
             "approval_count": proposal["approval_count"],
             "input_revision": proposal["input_revision"],
+            "evidence_deadline": proposal["evidence_deadline"],
+            "deadline_revision": proposal["deadline_revision"],
+            "source_authority_digest": self._source_authority_digest(proposal, policy),
         })
 
     def _append_audit(self, entity_id: str, event_type: str, details: dict) -> str:
@@ -284,23 +454,45 @@ class PolicyGuard(gl.Contract):
 
     def _collect_sources(self, proposal: dict, policy: dict):
         sources = [
-            {"kind": "POLICY", "url": policy["policy_url"], "sha256": policy["policy_sha256"]},
-            {"kind": "PROPOSAL", "url": proposal["proposal_url"], "sha256": proposal["proposal_file_sha256"]},
+            {
+                "kind": "POLICY", "scope": "POLICY", "organization_id": proposal["organization_id"],
+                "url": policy["policy_url"], "sha256": policy["policy_sha256"],
+                "source_authority_id": policy["source_authority_id"], "issuer_wallet": policy["issuer_wallet"],
+            },
+            {
+                "kind": "PROPOSAL", "scope": "PROPOSAL", "organization_id": proposal["organization_id"],
+                "url": proposal["proposal_url"], "sha256": proposal["proposal_file_sha256"],
+                "source_authority_id": proposal["proposal_source_authority_id"],
+                "issuer_wallet": proposal["source_issuer_wallet"],
+            },
         ]
         for evidence_id in proposal.get("evidence_ids", []):
             raw = self.evidence.get(proposal["proposal_id"] + "|" + str(evidence_id), "")
             if raw != "":
                 item = json.loads(raw)
-                sources.append({"kind": item["type"], "url": item["url"], "sha256": item["sha256"]})
+                sources.append({
+                    "kind": item["type"], "scope": item["type"], "organization_id": proposal["organization_id"],
+                    "url": item["url"], "sha256": item["sha256"],
+                    "source_authority_id": item["source_authority_id"], "issuer_wallet": item["issuer_wallet"],
+                })
         for reviewer in proposal.get("approval_reviewers", []):
             raw = self.approvals.get(proposal["proposal_id"] + "|" + str(reviewer).lower(), "")
             if raw != "":
                 item = json.loads(raw)
-                sources.append({"kind": "REVIEWER_APPROVAL", "url": item["proof_url"], "sha256": item["proof_sha256"]})
+                sources.append({
+                    "kind": "REVIEWER_APPROVAL", "scope": "REVIEWER_APPROVAL",
+                    "organization_id": proposal["organization_id"], "url": item["proof_url"],
+                    "sha256": item["proof_sha256"], "source_authority_id": item["source_authority_id"],
+                    "issuer_wallet": item["issuer_wallet"],
+                })
         unique = []
         seen = []
         for source in sources:
-            key = source["url"] + "|" + source["sha256"]
+            key = (
+                source["url"] + "|" + source["sha256"] + "|" +
+                source["source_authority_id"] + "|" +
+                str(source["issuer_wallet"]).lower() + "|" + source["scope"]
+            )
             if key not in seen:
                 seen.append(key)
                 unique.append(source)
@@ -310,12 +502,26 @@ class PolicyGuard(gl.Contract):
         records = []
         sections = []
         for source in sources:
+            if not self._source_is_authenticated(source):
+                records.append({
+                    "kind": source["kind"], "url": source["url"],
+                    "expected_sha256": source["sha256"], "actual_sha256": "",
+                    "status": "SOURCE_UNAUTHORIZED", "bytes": 0,
+                    "source_authority_id": source["source_authority_id"],
+                    "issuer_wallet": source["issuer_wallet"], "authenticated": False,
+                })
+                return {
+                    "ok": False, "records": records, "text": "\n\n".join(sections),
+                    "error": "SOURCE_UNAUTHORIZED",
+                }
             fetched = self._safe_web_get(str(source["url"]))
             if not fetched["ok"]:
                 records.append({
                     "kind": source["kind"], "url": source["url"],
                     "expected_sha256": source["sha256"], "actual_sha256": "",
                     "status": fetched["error"], "bytes": 0,
+                    "source_authority_id": source["source_authority_id"],
+                    "issuer_wallet": source["issuer_wallet"], "authenticated": True,
                 })
                 return {"ok": False, "records": records, "text": "\n\n".join(sections), "error": fetched["error"]}
             body = fetched["body"]
@@ -325,6 +531,8 @@ class PolicyGuard(gl.Contract):
                 "kind": source["kind"], "url": source["url"],
                 "expected_sha256": source["sha256"], "actual_sha256": actual,
                 "status": status, "bytes": len(body),
+                "source_authority_id": source["source_authority_id"],
+                "issuer_wallet": source["issuer_wallet"], "authenticated": True,
             })
             if status != "VERIFIED":
                 return {"ok": False, "records": records, "text": "\n\n".join(sections), "error": status}
@@ -366,19 +574,29 @@ class PolicyGuard(gl.Contract):
             "evidence_set_digest": self._evidence_set_digest(proposal),
             "input_revision": proposal["input_revision"],
             "binding_digest": self._binding_digest(proposal, policy),
+            "source_authority_digest": self._source_authority_digest(proposal, policy),
+            "evidence_deadline": proposal["evidence_deadline"],
+            "deadline_revision": proposal["deadline_revision"],
+            "deadline_satisfied": self._now() >= int(proposal["evidence_deadline"]),
+            "citations_valid": True,
+            "reliable_adjudication": False,
         }
 
     def _deterministic_gate(self, proposal: dict, policy: dict, fetched: dict):
         result = self._base_assessment(proposal, policy, fetched)
         if not fetched.get("ok", False):
             failed_kinds = [str(item.get("kind", "")) for item in fetched.get("records", []) if item.get("status") != "VERIFIED"]
-            if "POLICY" in failed_kinds or "PROPOSAL" in failed_kinds:
+            if fetched.get("error") == "SOURCE_UNAUTHORIZED":
+                result["reason"] = "Source authority authentication failed."
+                result["missing_requirements"] = ["Active exact-host source authority for the recorded issuer and scope"]
+            elif "POLICY" in failed_kinds or "PROPOSAL" in failed_kinds:
                 result["reason"] = "Policy or proposal digest mismatch."
                 result["missing_requirements"] = ["Authenticated policy and proposal bytes"]
             else:
                 result["reason"] = "Evidence digest mismatch or unavailable source."
                 result["missing_requirements"] = ["Authentic and reachable evidence"]
-            result["citations"] = [str(item.get("url", "")) for item in fetched.get("records", []) if item.get("url")]
+            result["citations"] = []
+            result["citations_valid"] = True
             return result
 
         result["satisfied_requirements"] = ["Policy and proposal bytes match their SHA-256 commitments"]
@@ -393,6 +611,8 @@ class PolicyGuard(gl.Contract):
             result["evidence_quality_score"] = 55
             result["confidence"] = "HIGH"
             result["citations"] = [policy["policy_url"], proposal["proposal_url"]]
+            result["citations_valid"] = True
+            result["reliable_adjudication"] = bool(result["deadline_satisfied"])
             return result
         if required_approvals > 0:
             result["satisfied_requirements"].append(str(required_approvals) + " distinct reviewer approvals recorded")
@@ -421,6 +641,8 @@ class PolicyGuard(gl.Contract):
             result["evidence_quality_score"] = 60
             result["confidence"] = "HIGH"
             result["citations"] = [policy["policy_url"], proposal["proposal_url"]]
+            result["citations_valid"] = True
+            result["reliable_adjudication"] = bool(result["deadline_satisfied"])
             return result
         if required_types:
             result["satisfied_requirements"].append("Required document types are present: " + ", ".join(required_types))
@@ -447,21 +669,32 @@ class PolicyGuard(gl.Contract):
         confidence = str(raw.get("confidence", "LOW")).upper()
         if confidence not in ("HIGH", "MEDIUM", "LOW"):
             confidence = "LOW"
-        allowed_urls = [str(item["url"]) for item in fetched.get("records", []) if item.get("status") == "VERIFIED"]
+        allowed_urls = [
+            str(item["url"]) for item in fetched.get("records", [])
+            if item.get("status") == "VERIFIED" and item.get("authenticated") is True
+        ]
+        supplied_citations = self._safe_string_list(raw.get("citations", []), 16)
+        invalid_citations = [value for value in supplied_citations if value not in allowed_urls]
         citations = []
-        for value in self._safe_string_list(raw.get("citations", []), 16):
+        for value in supplied_citations:
             if value in allowed_urls and value not in citations:
                 citations.append(value)
-        if not citations:
-            citations = allowed_urls[:8]
+        citations_valid = len(invalid_citations) == 0 and len(citations) > 0
+        if not citations_valid:
+            status = "NEEDS_REVIEW"
+            reason = "Consensus citations were missing or did not match authenticated fetched pages."
         result["status"] = status
         result["reason"] = reason
         result["satisfied_requirements"] = self._safe_string_list(raw.get("satisfied_requirements", []))
         result["missing_requirements"] = self._safe_string_list(raw.get("missing_requirements", []))
         result["violated_requirements"] = self._safe_string_list(raw.get("violated_requirements", []))
         result["citations"] = citations
+        result["citations_valid"] = citations_valid
         result["evidence_quality_score"] = score
         result["confidence"] = confidence
+        result["reliable_adjudication"] = bool(
+            fetched.get("ok", False) and result["deadline_satisfied"] and citations_valid
+        )
         return result
 
     def _assessment_valid(self, value, proposal: dict, policy: dict) -> bool:
@@ -475,10 +708,37 @@ class PolicyGuard(gl.Contract):
             return False
         if value.get("proposal_digest") != proposal["proposal_digest"]:
             return False
+        if value.get("source_authority_digest") != self._source_authority_digest(proposal, policy):
+            return False
+        if not isinstance(value.get("evidence_deadline"), int):
+            return False
+        if value.get("evidence_deadline") != int(proposal["evidence_deadline"]):
+            return False
+        if not isinstance(value.get("deadline_revision"), int):
+            return False
+        if value.get("deadline_revision") != int(proposal["deadline_revision"]):
+            return False
         score = value.get("evidence_quality_score")
         if not isinstance(score, int) or score < 0 or score > 100:
             return False
         if not isinstance(value.get("evidence_digests", []), list):
+            return False
+        allowed_urls = [
+            str(item.get("url", "")) for item in value.get("evidence_digests", [])
+            if item.get("status") == "VERIFIED" and item.get("authenticated") is True
+        ]
+        citations = value.get("citations", [])
+        if not isinstance(citations, list) or any(str(url) not in allowed_urls for url in citations):
+            return False
+        expected_reliable = bool(
+            value.get("source_status") == "VERIFIED"
+            and value.get("deadline_satisfied") is True
+            and value.get("citations_valid") is True
+            and len(citations) > 0
+        )
+        if value.get("reliable_adjudication") is not expected_reliable:
+            return False
+        if value.get("status") in ("COMPLIANT", "NON_COMPLIANT") and not expected_reliable:
             return False
         return True
 
@@ -519,6 +779,9 @@ Return JSON only:
             "required_approvals_above_threshold": policy["required_approvals_above_threshold"],
             "required_document_types_above_threshold": policy["required_document_types_above_threshold"],
             "baseline_document_types": policy["baseline_document_types"],
+            "evidence_deadline": proposal["evidence_deadline"],
+            "deadline_revision": proposal["deadline_revision"],
+            "source_authority_digest": self._source_authority_digest(proposal, policy),
         }, sort_keys=True)
 
         def leader_fn():
@@ -557,6 +820,20 @@ Return JSON only:
                 return False
             if proposed["approval_set_digest"] != own["approval_set_digest"]:
                 return False
+            if proposed["source_authority_digest"] != own["source_authority_digest"]:
+                return False
+            if proposed["deadline_satisfied"] != own["deadline_satisfied"]:
+                return False
+            if proposed["citations_valid"] != own["citations_valid"]:
+                return False
+            if proposed["reliable_adjudication"] != own["reliable_adjudication"]:
+                return False
+            own_urls = [
+                str(item.get("url", "")) for item in own.get("evidence_digests", [])
+                if item.get("status") == "VERIFIED" and item.get("authenticated") is True
+            ]
+            if any(str(url) not in own_urls for url in proposed.get("citations", [])):
+                return False
             if sorted(proposed.get("missing_requirements", [])) != sorted(own.get("missing_requirements", [])):
                 return False
             if abs(int(proposed["evidence_quality_score"]) - int(own["evidence_quality_score"])) > 15:
@@ -579,6 +856,8 @@ Return JSON only:
             "name": self._require_text(name, "Organization name", 3, 140),
             "owner": self._require_address(self._sender(), "Organization owner"),
             "reviewers": [],
+            "source_authority_ids": [],
+            "source_authority_revision": 0,
             "policy_id": "",
             "current_policy_version": 0,
             "created_at": self._now(),
@@ -603,6 +882,53 @@ Return JSON only:
         org["reviewers"] = reviewers
         self.organizations[org_id] = json.dumps(org, sort_keys=True)
         self._append_audit(org_id, "REVIEWER_ADDED", {"reviewer": reviewer})
+
+    @gl.public.write
+    def register_source_authority(
+        self,
+        organization_id: str,
+        authority_id: str,
+        hostname: str,
+        issuer_wallet: str,
+        allowed_scopes: str,
+    ) -> None:
+        org_id, org = self._load_org(organization_id)
+        if not self._is_org_owner(org):
+            raise gl.vm.UserError("Only the organization owner can register source authorities")
+        clean_id = self._store_source_authority(
+            org_id,
+            org,
+            authority_id,
+            hostname,
+            issuer_wallet,
+            self._parse_source_scopes(allowed_scopes),
+        )
+        self.organizations[org_id] = json.dumps(org, sort_keys=True)
+        self._append_audit(org_id, "SOURCE_AUTHORITY_REGISTERED", {
+            "authority_id": clean_id,
+            "hostname": self._require_hostname(hostname, "Source hostname"),
+            "issuer_wallet": self._require_address(issuer_wallet, "Source issuer wallet").lower(),
+            "scopes": self._parse_source_scopes(allowed_scopes),
+            "source_authority_revision": org["source_authority_revision"],
+        })
+
+    @gl.public.write
+    def revoke_source_authority(self, organization_id: str, authority_id: str) -> None:
+        org_id, org = self._load_org(organization_id)
+        if not self._is_org_owner(org):
+            raise gl.vm.UserError("Only the organization owner can revoke source authorities")
+        key, authority = self._load_source_authority(org_id, authority_id)
+        if authority.get("active") is not True:
+            raise gl.vm.UserError("Source authority is already revoked")
+        authority["active"] = False
+        authority["revoked_at"] = self._now()
+        self.source_authorities[key] = json.dumps(authority, sort_keys=True)
+        org["source_authority_revision"] = int(org.get("source_authority_revision", 0)) + 1
+        self.organizations[org_id] = json.dumps(org, sort_keys=True)
+        self._append_audit(org_id, "SOURCE_AUTHORITY_REVOKED", {
+            "authority_id": authority["authority_id"],
+            "source_authority_revision": org["source_authority_revision"],
+        })
 
     @gl.public.write
     def register_policy_version(
@@ -642,6 +968,10 @@ Return JSON only:
             "title": self._require_text(title, "Policy title", 5, 180),
             "policy_url": self._require_https_url(policy_url, "Policy URL"),
             "policy_sha256": self._require_sha256(policy_sha256, "Policy digest"),
+            "source_authority_id": self._authenticate_source(
+                org_id, self._require_https_url(policy_url, "Policy URL"), "POLICY", self._sender()
+            ),
+            "issuer_wallet": self._sender().lower(),
             "approval_threshold_usd": approval_threshold_usd,
             "required_approvals_above_threshold": required_approvals_above_threshold,
             "required_document_types_above_threshold": self._parse_document_types(required_document_types_above_threshold, "Threshold document"),
@@ -670,6 +1000,7 @@ Return JSON only:
         proposal_url: str,
         proposal_file_sha256: str,
         authorized_executor: str,
+        evidence_deadline: int,
     ) -> None:
         clean_id = self._require_id(proposal_id, "Proposal ID")
         if self.proposals.get(clean_id, "") != "":
@@ -680,6 +1011,13 @@ Return JSON only:
         self._load_policy(org_id, policy_id, policy_version)
         if requested_amount_usd < 0 or requested_amount_usd > 10_000_000_000:
             raise gl.vm.UserError("Requested amount is outside the supported range")
+        now = self._now()
+        if evidence_deadline <= now or evidence_deadline > now + MAX_EVIDENCE_WINDOW_SECONDS:
+            raise gl.vm.UserError("Evidence deadline must be in the future and no more than 30 days away")
+        clean_proposal_url = self._require_https_url(proposal_url, "Proposal URL")
+        proposal_source_authority_id = self._authenticate_source(
+            org_id, clean_proposal_url, "PROPOSAL", self._sender()
+        )
         record = {
             "proposal_id": clean_id,
             "organization_id": org_id,
@@ -688,8 +1026,10 @@ Return JSON only:
             "action_type": self._require_text(action_type, "Action type", 3, 80).upper(),
             "action_description": self._require_text(action_description, "Action description", 20, 3000),
             "requested_amount_usd": requested_amount_usd,
-            "proposal_url": self._require_https_url(proposal_url, "Proposal URL"),
+            "proposal_url": clean_proposal_url,
             "proposal_file_sha256": self._require_sha256(proposal_file_sha256, "Proposal file digest"),
+            "proposal_source_authority_id": proposal_source_authority_id,
+            "source_issuer_wallet": self._sender().lower(),
             "authorized_executor": self._require_address(authorized_executor, "Authorized executor"),
             "proposer": self._sender(),
             "status": "PENDING_EVIDENCE",
@@ -697,6 +1037,8 @@ Return JSON only:
             "approval_reviewers": [],
             "approval_count": 0,
             "input_revision": 0,
+            "evidence_deadline": evidence_deadline,
+            "deadline_revision": 1,
             "evaluation_ids": [],
             "latest_evaluation_id": "",
             "latest_verdict": "UNEVALUATED",
@@ -710,7 +1052,11 @@ Return JSON only:
         self.proposals[clean_id] = json.dumps(record, sort_keys=True)
         self.proposal_ids.append(clean_id)
         self.total_proposals = u32(self.total_proposals + 1)
-        self._append_audit(clean_id, "PROPOSAL_CREATED", {"proposal_digest": record["proposal_digest"]})
+        self._append_audit(clean_id, "PROPOSAL_CREATED", {
+            "proposal_digest": record["proposal_digest"],
+            "proposal_source_authority_id": proposal_source_authority_id,
+            "evidence_deadline": evidence_deadline,
+        })
 
     @gl.public.write
     def rebind_proposal_policy(self, proposal_id: str, new_policy_version: int) -> None:
@@ -720,6 +1066,7 @@ Return JSON only:
             raise gl.vm.UserError("Only the organization owner can rebind a proposal policy")
         if proposal["status"] in ("AUTHORIZED", "EXECUTED"):
             raise gl.vm.UserError("An authorized or executed proposal cannot be rebound")
+        self._require_evidence_open(proposal)
         if new_policy_version != int(org["current_policy_version"]):
             raise gl.vm.UserError("Proposal must rebind to the current policy version")
         self._load_policy(proposal["organization_id"], proposal["policy_id"], new_policy_version)
@@ -748,10 +1095,9 @@ Return JSON only:
         clean_id, proposal = self._load_proposal(proposal_id)
         _, org = self._load_org(proposal["organization_id"])
         sender = self._sender().lower()
-        if sender not in (str(org["owner"]).lower(), str(proposal["proposer"]).lower()):
-            raise gl.vm.UserError("Only the organization owner or proposer can add evidence")
         if proposal["status"] in ("AUTHORIZED", "EXECUTED"):
             raise gl.vm.UserError("Evidence cannot change after authorization")
+        self._require_evidence_open(proposal)
         clean_evidence_id = self._require_id(evidence_id, "Evidence ID")
         key = clean_id + "|" + clean_evidence_id
         if self.evidence.get(key, "") != "":
@@ -761,9 +1107,15 @@ Return JSON only:
             raise gl.vm.UserError("Exactly one evidence type is required")
         url = self._require_https_url(evidence_url, "Evidence URL")
         digest = self._require_sha256(evidence_sha256, "Evidence digest")
+        source_authority_id = self._authenticate_source(
+            proposal["organization_id"], url, parsed_types[0], sender
+        )
         fingerprint = self._canonical_hash({"proposal_id": clean_id, "url": url.lower(), "sha256": digest})
         if self.evidence_fingerprints.get(fingerprint, "") != "":
             raise gl.vm.UserError("Duplicate evidence URL and digest are not allowed")
+        evidence_ids = list(proposal.get("evidence_ids", []))
+        if len(evidence_ids) >= MAX_ITEMS:
+            raise gl.vm.UserError("Proposal evidence-item limit reached")
         record = {
             "evidence_id": clean_evidence_id,
             "proposal_id": clean_id,
@@ -771,18 +1123,23 @@ Return JSON only:
             "url": url,
             "sha256": digest,
             "submitted_by": self._sender(),
+            "source_authority_id": source_authority_id,
+            "issuer_wallet": sender,
             "submitted_at": self._now(),
             "fingerprint": fingerprint,
         }
         self.evidence[key] = json.dumps(record, sort_keys=True)
         self.evidence_fingerprints[fingerprint] = key
-        evidence_ids = list(proposal.get("evidence_ids", []))
         evidence_ids.append(clean_evidence_id)
         proposal["evidence_ids"] = evidence_ids
         self._invalidate_after_input_change(proposal)
         self._save_proposal(clean_id, proposal)
         self.total_evidence_items = u32(self.total_evidence_items + 1)
-        self._append_audit(clean_id, "EVIDENCE_ADDED", {"evidence_id": clean_evidence_id, "fingerprint": fingerprint})
+        self._append_audit(clean_id, "EVIDENCE_ADDED", {
+            "evidence_id": clean_evidence_id,
+            "fingerprint": fingerprint,
+            "source_authority_id": source_authority_id,
+        })
 
     @gl.public.write
     def approve_proposal(self, proposal_id: str, proof_url: str, proof_sha256: str) -> None:
@@ -793,13 +1150,20 @@ Return JSON only:
             raise gl.vm.UserError("Only a registered reviewer can approve this proposal")
         if proposal["status"] in ("AUTHORIZED", "EXECUTED"):
             raise gl.vm.UserError("Approvals cannot change after authorization")
+        self._require_evidence_open(proposal)
+        clean_proof_url = self._require_https_url(proof_url, "Approval proof URL")
+        source_authority_id = self._authenticate_source(
+            proposal["organization_id"], clean_proof_url, "REVIEWER_APPROVAL", reviewer
+        )
         self._add_approval_record(
             clean_id,
             proposal,
             reviewer,
-            self._require_https_url(proof_url, "Approval proof URL"),
+            clean_proof_url,
             self._require_sha256(proof_sha256, "Approval proof digest"),
             "DIRECT_WALLET",
+            source_authority_id,
+            reviewer,
         )
         self._save_proposal(clean_id, proposal)
         self._append_audit(clean_id, "REVIEWER_APPROVAL_RECORDED", {"reviewer": reviewer, "mode": "DIRECT_WALLET"})
@@ -812,6 +1176,8 @@ Return JSON only:
         proof_url: str,
         proof_sha256: str,
         mode: str,
+        source_authority_id: str,
+        issuer_wallet: str,
     ) -> None:
         key = proposal_id + "|" + reviewer.lower()
         if self.approvals.get(key, "") != "":
@@ -822,6 +1188,8 @@ Return JSON only:
             "proof_url": proof_url,
             "proof_sha256": proof_sha256,
             "mode": mode,
+            "source_authority_id": source_authority_id,
+            "issuer_wallet": issuer_wallet.lower(),
             "approved_at": self._now(),
         }
         self.approvals[key] = json.dumps(record, sort_keys=True)
@@ -833,6 +1201,33 @@ Return JSON only:
         self.total_approvals = u32(self.total_approvals + 1)
 
     @gl.public.write
+    def open_remediation_window(self, proposal_id: str, new_evidence_deadline: int) -> None:
+        clean_id, proposal = self._load_proposal(proposal_id)
+        _, org = self._load_org(proposal["organization_id"])
+        if not self._is_org_owner(org):
+            raise gl.vm.UserError("Only the organization owner can open a remediation window")
+        if proposal["status"] not in ("NON_COMPLIANT", "NEEDS_REVIEW"):
+            raise gl.vm.UserError("Remediation requires a finalized non-compliant or needs-review evaluation")
+        self._require_evidence_closed(proposal)
+        now = self._now()
+        if (
+            new_evidence_deadline < now + MIN_REMEDIATION_WINDOW_SECONDS
+            or new_evidence_deadline > now + MAX_EVIDENCE_WINDOW_SECONDS
+        ):
+            raise gl.vm.UserError("Remediation deadline must be 60 seconds to 30 days in the future")
+        old_deadline = int(proposal["evidence_deadline"])
+        proposal["evidence_deadline"] = new_evidence_deadline
+        proposal["deadline_revision"] = int(proposal.get("deadline_revision", 1)) + 1
+        proposal["proposal_digest"] = self._proposal_content_digest(proposal)
+        self._invalidate_after_input_change(proposal)
+        self._save_proposal(clean_id, proposal)
+        self._append_audit(clean_id, "REMEDIATION_WINDOW_OPENED", {
+            "old_evidence_deadline": old_deadline,
+            "new_evidence_deadline": new_evidence_deadline,
+            "deadline_revision": proposal["deadline_revision"],
+        })
+
+    @gl.public.write
     def start_evaluation(self, proposal_id: str) -> None:
         clean_id, proposal = self._load_proposal(proposal_id)
         _, org = self._load_org(proposal["organization_id"])
@@ -841,6 +1236,7 @@ Return JSON only:
             raise gl.vm.UserError("Only the organization owner or proposer can start an evaluation")
         if proposal["status"] in ("AUTHORIZED", "EXECUTED"):
             raise gl.vm.UserError("An authorized or executed proposal cannot be re-evaluated")
+        self._require_evidence_closed(proposal)
         if int(proposal["policy_version"]) != int(org["current_policy_version"]):
             raise gl.vm.UserError("Proposal is bound to a stale policy version")
         _, policy = self._load_policy(proposal["organization_id"], proposal["policy_id"], int(proposal["policy_version"]))
@@ -857,6 +1253,9 @@ Return JSON only:
         verdict["previous_evaluation_id"] = previous
         verdict["evaluated_by"] = self._sender()
         verdict["evaluated_at"] = self._now()
+        if verdict["status"] in ("COMPLIANT", "NON_COMPLIANT") and verdict.get("reliable_adjudication") is not True:
+            verdict["status"] = "NEEDS_REVIEW"
+            verdict["reason"] = "The result did not satisfy source, citation, and deadline reliability gates."
         self.evaluations[evaluation_id] = json.dumps(verdict, sort_keys=True)
         evaluation_ids = list(proposal.get("evaluation_ids", []))
         evaluation_ids.append(evaluation_id)
@@ -893,6 +1292,14 @@ Return JSON only:
         current_binding = self._binding_digest(proposal, policy)
         if evaluation.get("status") != "COMPLIANT" or evaluation.get("binding_digest") != current_binding:
             raise gl.vm.UserError("Latest verdict is stale for the current policy, proposal, evidence, or approvals")
+        self._require_evidence_closed(proposal)
+        if (
+            evaluation.get("reliable_adjudication") is not True
+            or evaluation.get("citations_valid") is not True
+            or evaluation.get("deadline_satisfied") is not True
+            or int(evaluation.get("evaluated_at", 0)) < int(proposal["evidence_deadline"])
+        ):
+            raise gl.vm.UserError("Authorization requires reliable post-deadline adjudication with verified citations")
         authorization_id = clean_id + ":auth:" + latest_id
         record = {
             "authorization_id": authorization_id,
@@ -924,6 +1331,10 @@ Return JSON only:
         if raw == "":
             raise gl.vm.UserError("Authorization record was not found")
         authorization = json.loads(raw)
+        self._require_evidence_closed(proposal)
+        evaluation_raw = self.evaluations.get(str(authorization.get("evaluation_id", "")), "")
+        if evaluation_raw == "" or json.loads(evaluation_raw).get("reliable_adjudication") is not True:
+            raise gl.vm.UserError("Execution requires a reliable adjudication record")
         _, policy = self._load_policy(proposal["organization_id"], proposal["policy_id"], int(proposal["policy_version"]))
         if authorization.get("binding_digest") != self._binding_digest(proposal, policy):
             raise gl.vm.UserError("Authorization no longer matches the current proposal inputs")
@@ -968,11 +1379,33 @@ Return JSON only:
             "name": "PolicyGuard Demo DAO",
             "owner": self._sender(),
             "reviewers": reviewers,
+            "source_authority_ids": [],
+            "source_authority_revision": 0,
             "policy_id": policy_id,
             "current_policy_version": 1,
             "created_at": self._now(),
             "demo": True,
         }
+        owner_authority_id = self._store_source_authority(
+            org_id,
+            org,
+            "demo-owner-source",
+            "raw.githubusercontent.com",
+            self._sender(),
+            ["POLICY", "PROPOSAL", "EVIDENCE"],
+            True,
+        )
+        reviewer_authority_ids = []
+        for index in range(len(reviewers)):
+            reviewer_authority_ids.append(self._store_source_authority(
+                org_id,
+                org,
+                "demo-reviewer-" + str(index + 1),
+                "raw.githubusercontent.com",
+                reviewers[index],
+                ["REVIEWER_APPROVAL"],
+                True,
+            ))
         self.organizations[org_id] = json.dumps(org, sort_keys=True)
         self.organization_ids.append(org_id)
         self.total_organizations = u32(self.total_organizations + 1)
@@ -985,6 +1418,8 @@ Return JSON only:
             "title": "DAO Treasury Grant Policy",
             "policy_url": base + "policy/dao-grant-policy-v1.md",
             "policy_sha256": self._require_sha256(policy_sha256, "Policy digest"),
+            "source_authority_id": owner_authority_id,
+            "issuer_wallet": self._sender().lower(),
             "approval_threshold_usd": 20000,
             "required_approvals_above_threshold": 3,
             "required_document_types_above_threshold": ["AUDIT"],
@@ -1006,6 +1441,8 @@ Return JSON only:
             "requested_amount_usd": 35000,
             "proposal_url": base + "proposals/grant-35000.md",
             "proposal_file_sha256": self._require_sha256(proposal_sha256, "Proposal file digest"),
+            "proposal_source_authority_id": owner_authority_id,
+            "source_issuer_wallet": self._sender().lower(),
             "authorized_executor": self._sender(),
             "proposer": self._sender(),
             "status": "PENDING_EVIDENCE",
@@ -1013,6 +1450,8 @@ Return JSON only:
             "approval_reviewers": [],
             "approval_count": 0,
             "input_revision": 0,
+            "evidence_deadline": self._now(),
+            "deadline_revision": 1,
             "evaluation_ids": [],
             "latest_evaluation_id": "",
             "latest_verdict": "UNEVALUATED",
@@ -1025,8 +1464,17 @@ Return JSON only:
         proposal["proposal_digest"] = self._proposal_content_digest(proposal)
         proof_url = base + "evidence/reviewer-approvals.md"
         proof_hash = self._require_sha256(approvals_sha256, "Approval bundle digest")
-        for reviewer in reviewers:
-            self._add_approval_record(proposal_id, proposal, reviewer, proof_url, proof_hash, "DEMO_ATTESTED")
+        for index in range(len(reviewers)):
+            self._add_approval_record(
+                proposal_id,
+                proposal,
+                reviewers[index],
+                proof_url,
+                proof_hash,
+                "DEMO_ATTESTED",
+                reviewer_authority_ids[index],
+                reviewers[index],
+            )
         self.proposals[proposal_id] = json.dumps(proposal, sort_keys=True)
         self.proposal_ids.append(proposal_id)
         self.total_proposals = u32(self.total_proposals + 1)
@@ -1049,6 +1497,12 @@ Return JSON only:
     @gl.public.view
     def get_policy(self, organization_id: str, policy_id: str, version: int) -> str:
         return self.policies.get(self._policy_key(organization_id.strip(), policy_id.strip(), version), "")
+
+    @gl.public.view
+    def get_source_authority(self, organization_id: str, authority_id: str) -> str:
+        return self.source_authorities.get(
+            self._source_authority_key(organization_id.strip(), authority_id.strip()), ""
+        )
 
     @gl.public.view
     def get_proposal(self, proposal_id: str) -> str:
@@ -1123,4 +1577,5 @@ Return JSON only:
             "authorizations": int(self.total_authorizations),
             "executions": int(self.total_executions),
             "audit_events": int(self.total_audit_events),
+            "source_authorities": int(self.total_source_authorities),
         }, sort_keys=True)

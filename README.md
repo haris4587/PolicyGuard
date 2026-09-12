@@ -2,7 +2,7 @@
 
 **Consensus-enforced policy compliance for real organizational actions.**
 
-PolicyGuard lets an organization commit versioned, human-written policies and uses GenLayer validators to decide whether a proposed action complies with those policies and authenticated real-world evidence. Deterministic contract logic binds the result to exact policy, proposal, evidence, and approval digests; a stale verdict can never authorize execution.
+PolicyGuard lets an organization commit versioned, human-written policies and uses GenLayer validators to decide whether a proposed action complies with those policies and authenticated real-world evidence. Deterministic contract logic binds exact source authorities, evidence deadlines, fetched-page citations, policy, proposal, evidence, and approval digests; a stale or unreliable verdict can never authorize execution.
 
 > Builder Project status: complete and live. The contract, both Full Consensus verdicts, authorization, execution record, and production frontend are verified on GenLayer Studionet.
 
@@ -43,8 +43,8 @@ A conventional smart contract can count approvals or compare an amount with a th
 
 PolicyGuard separates those jobs:
 
-- **Deterministic contract layer:** ownership, policy versions, URL constraints, SHA-256 commitments, duplicate approval protection, input revisions, state transitions, stale-verdict prevention, authorization, execution, and append-only history.
-- **GenLayer consensus layer:** independent source retrieval, document authentication, policy interpretation, semantic evidence review, normalized findings, safe `NEEDS_REVIEW` fallback, and validator agreement on decision-critical fields.
+- **Deterministic contract layer:** ownership, source-authority registration and revocation, exact-host URL constraints, evidence deadlines, citation membership, SHA-256 commitments, duplicate approval protection, input revisions, state transitions, stale-verdict prevention, authorization, execution, and append-only history.
+- **GenLayer consensus layer:** independent authenticated-source retrieval, digest verification, policy interpretation, semantic evidence review, normalized findings, safe `NEEDS_REVIEW` fallback, and validator agreement on decision-critical fields.
 
 This follows GenLayer's current independent-verification guidance: validators rerun the same authenticated evaluation and compare status, source state, bindings, requirement sets, and evidence-quality score rather than trusting the leader's JSON shape.
 
@@ -52,17 +52,17 @@ This follows GenLayer's current independent-verification guidance: validators re
 
 ```mermaid
 stateDiagram-v2
-    [*] --> PENDING_EVIDENCE: create proposal
-    PENDING_EVIDENCE --> NON_COMPLIANT: finalized evaluation
-    NON_COMPLIANT --> PENDING_EVIDENCE: append remediation
-    PENDING_EVIDENCE --> COMPLIANT: finalized re-evaluation
+    [*] --> PENDING_EVIDENCE: create with deadline
+    PENDING_EVIDENCE --> NON_COMPLIANT: post-deadline evaluation
+    NON_COMPLIANT --> PENDING_EVIDENCE: recorded remediation window
+    PENDING_EVIDENCE --> COMPLIANT: post-deadline re-evaluation
     COMPLIANT --> AUTHORIZED: current binding verified
     AUTHORIZED --> EXECUTED: authorized executor
     PENDING_EVIDENCE --> NEEDS_REVIEW: ambiguous or unauthenticated
     NEEDS_REVIEW --> PENDING_EVIDENCE: new evidence or policy rebind
 ```
 
-Every evidence or approval change increments `input_revision`, clears authorization state, and produces a new evidence/approval-set digest. Policy upgrades require an explicit proposal rebind and new evaluation.
+Every evidence, approval, or deadline change increments `input_revision`, clears authorization state, and produces a new binding. Policy upgrades require an explicit proposal rebind and new evaluation. Source-authority revocation changes the recomputed authority digest and invalidates authorization without deleting history.
 
 ## Contract capabilities
 
@@ -70,6 +70,8 @@ Every evidence or approval change increments `input_revision`, clears authorizat
 
 - `create_organization`
 - `add_reviewer`
+- `register_source_authority`
+- `revoke_source_authority`
 - `register_policy_version`
 - `rebind_proposal_policy`
 
@@ -78,6 +80,7 @@ Every evidence or approval change increments `input_revision`, clears authorizat
 - `create_proposal`
 - `add_evidence`
 - `approve_proposal`
+- `open_remediation_window`
 - `bootstrap_demo` — owner-only, transparent demo attestations
 
 ### Consensus and execution
@@ -88,7 +91,7 @@ Every evidence or approval change increments `input_revision`, clears authorizat
 
 ### Auditable reads
 
-- `get_organization`, `get_policy`, `get_proposal`
+- `get_organization`, `get_source_authority`, `get_policy`, `get_proposal`
 - `get_evidence`, `get_approval`
 - `get_latest_evaluation`, `get_evaluation`, `get_evaluation_history`
 - `get_authorization`, `get_audit_event`, `get_recent_audit_event_ids`
@@ -104,6 +107,9 @@ Each immutable evaluation stores:
 - `missing_requirements`
 - `violated_requirements`
 - exact evidence `citations`
+- `citations_valid` and `reliable_adjudication` gates
+- evidence deadline and deadline revision
+- source-authority digest and per-page authority identity
 - expected and fetched evidence digests
 - evidence-quality score and confidence
 - policy version and policy digest
@@ -116,18 +122,22 @@ Each immutable evaluation stores:
 
 ## Security properties
 
-- Public canonical HTTPS URLs only; query strings, fragments, local/private hosts, and malformed paths are rejected.
+- Public canonical HTTPS URLs only; credentials, ports, encoded authority data, query strings, fragments, IP literals, local names, and malformed paths are rejected.
+- Organization-owner source authorities bind one exact hostname, issuer wallet, and allowed scope; matching never uses permissive suffixes or substrings.
+- Policy, proposal, evidence, and approval writes authenticate their source and issuer before state is accepted.
+- Evidence and approvals close at the stored deadline; reliable evaluation cannot begin before it.
 - Exact lowercase 64-character SHA-256 digests are required.
 - Policy, proposal, approval, and evidence bytes are independently fetched and verified inside the non-deterministic block.
 - Evidence is surrounded by explicit untrusted-document boundaries and cannot change the evaluator's task.
 - Duplicate evidence URL/digest pairs and duplicate reviewer-wallet approvals are rejected.
 - Unknown or malformed model output fails closed to `NEEDS_REVIEW`.
+- Missing or foreign model citations force `NEEDS_REVIEW`; stored citations must be exact authenticated fetched-page URLs.
 - A compliant evaluation does not itself execute anything.
-- Authorization recomputes the full binding and rejects stale policy, proposal, evidence, approval, or revision state.
+- Authorization recomputes the full binding and rejects stale policy, proposal, evidence, approval, deadline, source-authority, or revision state.
 - Execution requires the exact authorized executor wallet.
 - Historical policies, evidence, approvals, evaluations, and audit events are never deleted.
 
-See [SECURITY.md](docs/SECURITY.md) for the threat model and trust boundaries.
+See [the steward response](docs/STEWARD_RESPONSE.md) for the exact request-to-control mapping and [SECURITY.md](docs/SECURITY.md) for the threat model.
 
 ## Repository layout
 
@@ -152,7 +162,7 @@ npm run typecheck
 npm test
 ```
 
-`npm test` performs contract syntax checks, 18 deterministic lifecycle/security tests, contract-control verification, evidence-hash verification, ESLint, a production build, and production-worker rendering/client-integrity tests.
+`npm test` performs contract syntax checks, deterministic lifecycle/security tests, contract-control verification, evidence-hash verification, ESLint, a production build, and production-worker rendering/client-integrity tests.
 
 Run locally:
 
@@ -174,6 +184,7 @@ The exact demo files and digests are listed in [demo/HASHES.sha256](demo/HASHES.
 - [Demo runbook](docs/DEMO.md)
 - [Testing guide](docs/TESTING.md)
 - [Security and threat model](docs/SECURITY.md)
+- [Steward hardening response](docs/STEWARD_RESPONSE.md)
 - [Deployment evidence record](EVIDENCE.md)
 - [Builder submission draft](docs/SUBMISSION.md)
 

@@ -5,6 +5,7 @@ PolicyGuard validators fetch the files in this directory through commit-pinned `
 The primary lifecycle is intentionally two-stage:
 
 1. A USD 35,000 grant has three approvals but no audit, so consensus records `NON_COMPLIANT` with the reason `Required security audit is missing.`
-2. `security-audit.md` is appended as new evidence and a second evaluation is recorded. The first verdict remains immutable.
+2. After the initial evidence deadline closes, the missing-audit result is recorded with fetched-page citations and `reliable_adjudication = true`.
+3. A new remediation deadline is recorded, `security-audit.md` is appended by its registered source issuer before that deadline, and a second post-deadline evaluation is recorded. The first verdict remains immutable.
 
-The three bootstrap approvals are explicitly demo attestations. Production proposals use wallet-signed calls to `approve_proposal` from three distinct registered reviewer wallets.
+The bootstrap registers exact-host demo source authorities and labels its three approvals as demo attestations. Production proposals register issuer wallets and scopes on-chain, then use wallet-signed calls to `approve_proposal` from distinct roster wallets before the evidence deadline.

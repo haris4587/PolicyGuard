@@ -15,9 +15,10 @@ PolicyGuard is a submission-grade prototype, not a completed audit or production
 
 | Boundary | Trusted for | Not trusted for |
 |---|---|---|
-| Organization owner | registering reviewers/policies, authorizing compliant action | changing historical records or bypassing consensus |
-| Reviewer wallet | one approval under its registered identity | other reviewers or policy interpretation |
-| External URL | location of document bytes | truth, safety, or instructions |
+| Organization owner | registering/revoking source authorities and reviewers, registering policies, authorizing reliable compliant action | changing historical records or bypassing consensus |
+| Source issuer wallet | submitting a URL from its exact authorized host and scope | other hosts, other scopes, truth, or policy interpretation |
+| Reviewer wallet | one approval under its registered identity and source authority | other reviewers or policy interpretation |
+| External URL | location of authority-approved document bytes | truth, safety, or instructions |
 | GenLayer leader | proposing one normalized result | unilateral verdict authority |
 | Validator committee | consensus under the equivalence rule | source immutability without digest checking |
 | Frontend | transaction construction and display | authoritative verdict state |
@@ -32,7 +33,13 @@ PolicyGuard is a submission-grade prototype, not a completed audit or production
 ### SSRF and unsafe URLs
 
 **Threat:** validators are directed toward a local service, loopback address, or mutable query variant.  
-**Mitigation:** canonical HTTPS with a real path is required; query strings, fragments, backslashes, localhost, loopback, link-local, and RFC1918 IPv4 prefixes are rejected. Production deployments may further restrict hosts.
+**Mitigation:** canonical HTTPS with a real path is required. Credentials, ports, percent-encoded authority data, query strings, fragments, backslashes, IP literals, local-use suffixes, and invalid DNS labels are rejected. Every accepted document must exactly match an active organization source authority's normalized hostname, issuer wallet, and scope; no wildcard, substring, or suffix matching is used.
+
+### Claimant-selected or publicly appended sources
+
+**Threat:** a claimant selects favorable policy/proposal pages or appends arbitrary public evidence before requesting a verdict.
+
+**Mitigation:** the organization owner first registers a source authority binding an exact host, issuer wallet, and explicit scopes. Policy, proposal, evidence, and approval writes authenticate all three fields. `add_evidence` no longer trusts owner/proposer status by itself. Revocation changes the recomputed authority digest, making prior authorization bindings stale.
 
 ### Prompt injection inside documents
 
@@ -42,7 +49,19 @@ PolicyGuard is a submission-grade prototype, not a completed audit or production
 ### Malicious or malformed leader output
 
 **Threat:** the leader returns a valid-looking but unsupported verdict.  
-**Mitigation:** validators independently fetch and evaluate the same sources. Decision-critical fields and binding commitments are compared. Invalid enums, missing reason, invalid score, or malformed JSON fail closed to `NEEDS_REVIEW` or validator disagreement.
+**Mitigation:** validators independently authenticate, fetch, and evaluate the same sources. Decision-critical fields and binding commitments are compared. Invalid enums, missing reason, invalid score, or malformed JSON fail closed to `NEEDS_REVIEW` or validator disagreement.
+
+### Invented or unfetched citations
+
+**Threat:** a plausible verdict cites a page that validators never fetched, or omits citations while borrowing unsupported claims.
+
+**Mitigation:** every stored citation must exactly equal a successfully fetched, digest-verified, authority-authenticated URL. Invalid or missing citations are not silently replaced; they force `NEEDS_REVIEW`. Each validator checks proposed citations against its own fetched-page set.
+
+### Premature resolution
+
+**Threat:** a claimant requests resolution while other authorized issuers still have time to submit evidence.
+
+**Mitigation:** `evidence_deadline` and `deadline_revision` are stored in each proposal and binding. Evidence and approvals are accepted only before the deadline; evaluation is rejected until it closes. Authorization requires a reliable evaluation timestamped at or after that exact deadline. Remediation uses a new owner-recorded future window and invalidates the previous binding.
 
 ### Duplicate approvals
 
@@ -51,8 +70,9 @@ PolicyGuard is a submission-grade prototype, not a completed audit or production
 
 ### Stale verdict reuse
 
-**Threat:** evidence, approvals, the proposal, or policy changes after a compliant evaluation.  
-**Mitigation:** input changes increment `input_revision` and clear authorization. Authorization recomputes policy, proposal, evidence-set, and approval-set commitments. A policy upgrade also makes an old proposal version ineligible until explicitly rebound and re-evaluated.
+**Threat:** evidence, approvals, deadlines, source authority, the proposal, or policy changes after a compliant evaluation.
+
+**Mitigation:** input/deadline changes increment `input_revision` and clear authorization. Authorization recomputes policy, proposal, evidence-set, approval-set, deadline, and source-authority commitments. A policy upgrade also makes an old proposal version ineligible until explicitly rebound and re-evaluated.
 
 ### Unauthorized authorization or execution
 
@@ -72,7 +92,7 @@ PolicyGuard is a submission-grade prototype, not a completed audit or production
 ## Known limitations
 
 - The contract records execution authorization and completion; it does not move treasury assets in Studio.
-- SHA-256 proves byte integrity, not that a publisher is authoritative. Organizations must choose reputable or independently verifiable sources.
+- Source authority proves organization approval of a host/issuer/scope and SHA-256 proves byte integrity; neither independently proves that a publisher's claim is true. Validators still interpret the authenticated evidence and return `NEEDS_REVIEW` for ambiguity.
 - The demo approval bundle is owner-attested and labeled as such. Production approvals use distinct wallet signatures.
 - Public web availability can change. Unavailable evidence fails closed and can be retried through a new evaluation.
 - LLM judgment remains probabilistic. The equivalence rule narrows disagreement but does not replace legal or financial review for high-stakes production action.

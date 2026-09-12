@@ -9,11 +9,10 @@ flowchart TD
     A["MetaMask signer"] --> B["React application"]
     B --> C["GenLayer transaction"]
     C --> D["PolicyGuard contract"]
-    D --> E["Leader fetch + interpretation"]
-    D --> F["Validator fetch + interpretation"]
-    E --> G["Normalized verdict"]
+    D --> E["Authority + deadline gates"]
+    E --> F["Independent fetch + interpretation"]
     F --> G
-    G --> H["Digest-bound authorization gate"]
+    G["Citation-bound verdict"] --> H["Reliable authorization gate"]
 ```
 
 ## Components
@@ -24,9 +23,9 @@ flowchart TD
 
 The contract owns:
 
-- organizations and registered reviewer wallets;
+- organizations, registered reviewer wallets, and revocable exact-host source authorities;
 - sequential, immutable policy versions;
-- proposals bound to one policy version and proposal-file digest;
+- proposals bound to one policy version, proposal-file digest, and evidence deadline;
 - append-only evidence and approval records;
 - append-only consensus evaluations;
 - authorization and execution records;
@@ -36,14 +35,15 @@ The contract owns:
 
 `start_evaluation` snapshots the current proposal record and policy. Both leader and validators:
 
-1. Collect the policy, proposal, evidence, and approval-proof URLs.
-2. Fetch every source independently.
-3. Recalculate the SHA-256 digest of its exact bytes.
-4. Apply deterministic fail-closed gates for broken commitments and explicit normalized controls.
-5. Interpret the authenticated documents against the human-written policy.
-6. Normalize the response to a bounded schema.
+1. Confirm that the stored evidence deadline has closed.
+2. Collect the policy, proposal, evidence, and approval-proof URLs.
+3. Re-authenticate each exact hostname, issuer wallet, and scope against current contract state.
+4. Fetch every source independently and recalculate the SHA-256 digest of its exact bytes.
+5. Apply deterministic fail-closed gates for broken commitments and explicit normalized controls.
+6. Interpret the authenticated documents against the human-written policy.
+7. Accept only citations that exactly match authenticated fetched pages and normalize the response to a bounded schema.
 
-The validator compares decision-critical fields: status, source status, policy/proposal commitments, evidence/approval sets, missing requirements, and a bounded evidence-quality score. It does not accept a leader response merely because it is well-formed.
+The validator compares decision-critical fields: status, source status, policy/proposal commitments, evidence/approval sets, source-authority digest, deadline state, reliability flags, missing requirements, and a bounded evidence-quality score. It independently rejects a proposed citation that is absent from its own fetched-page set.
 
 ### Frontend
 
@@ -53,7 +53,7 @@ The case desk keeps a separately loaded `activeProposalId`. Evaluation,
 remediation, authorization, execution, evidence, and reviewer-approval actions
 all use that loaded ID; the demo identifier is available only through an
 explicit demo-load/bootstrap control. Policy setup also exposes the contract's
-owner-only `add_reviewer` call and renders the loaded organization's roster.
+owner-only `add_reviewer` and `register_source_authority` calls and renders the loaded organization's roster. Proposal creation records a deadline; remediation opens a new recorded future deadline rather than bypassing the original close.
 
 No secret account or generated private key is embedded. Disconnect clears only local application state because an application cannot silently revoke MetaMask permissions.
 
@@ -69,14 +69,16 @@ The proposal record digest commits:
 - requested USD amount;
 - proposal URL and file digest;
 - authorized executor.
+- proposal source-authority ID;
+- evidence deadline and deadline revision.
 
 ### Evidence-set digest
 
-Evidence entries are canonicalized by evidence ID and commit type, URL, and SHA-256 digest.
+Evidence entries are canonicalized by evidence ID and commit type, URL, SHA-256 digest, source-authority ID, and issuer wallet.
 
 ### Approval-set digest
 
-Approval entries are canonicalized by reviewer wallet and commit proof URL, proof digest, and approval mode.
+Approval entries are canonicalized by reviewer wallet and commit proof URL, proof digest, approval mode, source-authority ID, and issuer wallet.
 
 ### Authorization binding
 
@@ -88,16 +90,18 @@ The authorization digest commits:
 - evidence-set digest;
 - approval-set digest and count;
 - proposal input revision.
+- evidence deadline and deadline revision;
+- current source-authority digest.
 
-`authorize_action` recomputes this digest. Any changed input makes the latest evaluation stale. `execute_action` checks the authorization binding again.
+`authorize_action` recomputes this digest and requires `reliable_adjudication`, valid fetched-page citations, and an evaluation timestamp at or after the bound deadline. Any changed input or revoked authority makes the latest evaluation stale. `execute_action` checks both reliability and the authorization binding again.
 
 ## State model
 
 | State | Meaning | Allowed next actions |
 |---|---|---|
-| `PENDING_EVIDENCE` | Proposal exists or inputs changed | add evidence, approve, evaluate |
-| `NON_COMPLIANT` | A clear policy requirement failed | append remediation, re-evaluate |
-| `NEEDS_REVIEW` | Evidence/authentication/model ambiguity failed closed | append clarification, re-evaluate |
+| `PENDING_EVIDENCE` | Proposal exists, a window is open, or inputs changed | add authenticated evidence/approval before deadline; evaluate after deadline |
+| `NON_COMPLIANT` | A reliable post-deadline requirement failed | open a recorded remediation window |
+| `NEEDS_REVIEW` | Source, citation, or model ambiguity failed closed | open a recorded remediation window |
 | `COMPLIANT` | Latest evaluation satisfies the policy | authorize, or change input and re-evaluate |
 | `AUTHORIZED` | Owner approved the exact compliant binding | execute by named executor |
 | `EXECUTED` | Terminal execution record | reads only |
@@ -106,4 +110,4 @@ The transaction UI exposes `wallet`, `submitted`, `accepted`, and `finalized` st
 
 ## Demo bootstrap trust boundary
 
-The owner-only `bootstrap_demo` method exists to make the public reviewer demonstration reproducible with one wallet. It creates three clearly marked `DEMO_ATTESTED` approvals linked to one hash-bound approval bundle. Normal organizations use `add_reviewer` and `approve_proposal`; each reviewer must sign their own transaction and the wallet-address key prevents duplicates. The UI and demo document disclose this distinction.
+The owner-only `bootstrap_demo` method exists to make the public reviewer demonstration reproducible with one wallet. It creates explicit demo source authorities and three clearly marked `DEMO_ATTESTED` approvals linked to one hash-bound approval bundle. Its initial evidence deadline is closed so the first evaluation is not premature. Normal organizations register each issuer authority, use `add_reviewer` and `approve_proposal`, and require every reviewer to sign their own transaction. The UI and demo document disclose this distinction.

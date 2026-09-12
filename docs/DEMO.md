@@ -2,7 +2,7 @@
 
 ## Story in one sentence
 
-A DAO's written policy blocks a USD 35,000 grant because a required audit is missing, then permits authorization only after the audit is appended and a new consensus evaluation becomes compliant.
+A DAO's written policy blocks a USD 35,000 grant because a required audit is missing. The result becomes reliable only after its recorded evidence deadline, and authorization remains blocked until an authenticated audit is added during a new remediation window and a second post-deadline evaluation becomes compliant.
 
 ## Public walkthrough
 
@@ -16,18 +16,19 @@ A DAO's written policy blocks a USD 35,000 grant because a required audit is mis
    - approval count `3`
    - no authorization record
 6. Open the published audit and show its SHA-256 digest.
-7. Append the audit evidence through the wallet-signed action.
-8. Start Full Consensus again.
-9. Show both evaluations in the immutable timeline.
-10. Show evaluation #2 as `COMPLIANT`, authorize the action, and show the binding digest.
-11. Show the final `EXECUTED` state and immutable execution reference.
+7. Open a recorded remediation window and show the new on-chain deadline revision.
+8. Append the audit through its source-authorized wallet before the new deadline.
+9. Show that early re-evaluation is rejected; after the deadline, start Full Consensus again.
+10. Show both evaluations, exact fetched-page citations, and reliable-adjudication flags in the immutable timeline.
+11. Show evaluation #2 as `COMPLIANT`, authorize the action, and show the binding digest.
+12. Show the final `EXECUTED` state and immutable execution reference.
 
 ## Expected lifecycle evidence
 
 ```text
 PENDING_EVIDENCE
   → NON_COMPLIANT (evaluation #1; missing audit)
-  → PENDING_EVIDENCE (audit appended; input revision increments)
+  → PENDING_EVIDENCE (remediation deadline recorded; audit appended; revisions increment)
   → COMPLIANT (evaluation #2; previous evaluation linked)
   → AUTHORIZED (latest binding rechecked)
   → EXECUTED (authorized executor records completion)
@@ -38,6 +39,9 @@ This exact lifecycle is live on Studionet at contract [`0xdD7D1EaC2A2F09602734BC
 ## What the demo proves
 
 - The contract stores a human-policy reference and exact bytes commitment.
+- Exact-host source authorities bind issuer wallets and scopes before documents enter adjudication.
+- Evaluation and authorization enforce the active evidence deadline from contract state.
+- Every stored citation is an exact authenticated fetched-page URL.
 - Reviewer identities cannot be duplicated.
 - Validator consensus interprets documents, while deterministic controls fail closed for explicit missing inputs.
 - Remediation does not overwrite the negative verdict.

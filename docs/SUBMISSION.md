@@ -12,9 +12,9 @@ PolicyGuard is a complete wallet-connected application, deployed Intelligent Con
 
 ## Description
 
-PolicyGuard turns human-written organizational rules into auditable execution gates. Organizations register versioned policies with SHA-256 commitments, create proposals, collect duplicate-protected reviewer approvals, and append real-world evidence. GenLayer validators independently fetch the committed bytes and interpret whether the action complies, returning a normalized COMPLIANT, NON_COMPLIANT, or NEEDS_REVIEW verdict with reasons, requirements, citations, evidence digests, and quality scoring. Every recheck preserves earlier results. Authorization is impossible unless the latest finalized compliant verdict still matches the current policy version, proposal, evidence set, approval set, and input revision. The live demo blocks a USD 35,000 DAO grant when its required security audit is missing, then supports audit remediation and a new Full Consensus evaluation.
+PolicyGuard turns human-written organizational rules into auditable execution gates. Organization owners register source authorities that bind an exact hostname, issuer wallet, and allowed scopes. Proposals carry an on-chain evidence deadline; policy, proposal, evidence, and approval records must authenticate against an active authority. After the deadline, GenLayer validators independently fetch digest-bound pages and accept only citations that exactly match those fetched pages. Every recheck preserves earlier results. Authorization is impossible unless the latest compliant verdict is marked reliable and still matches the current policy, proposal, evidence, approvals, deadline, source authorities, and input revision. The live demo blocks a USD 35,000 DAO grant when its required security audit is missing, then uses a recorded remediation window before a new Full Consensus evaluation.
 
-Character count: 877 including spaces.
+Character count: 896 including spaces.
 
 ## Tags
 
@@ -45,6 +45,9 @@ Use one URL per platform link field:
 - Finalized Full Consensus transaction for three approvals plus missing audit.
 - Finalized contract read showing `NON_COMPLIANT` and exact missing-audit reason.
 - Commit-pinned source URLs with exact SHA-256 hashes.
+- Exact-host source authorities with issuer-wallet and scope authentication.
+- Contract-state evidence deadlines and rejection of premature adjudication.
+- Citation membership checked against independently fetched authenticated pages.
 - Corrected Full Consensus result `COMPLIANT`, with re-evaluation history preserving the original result.
 - Authorization bound to evaluation #2 and a completed `EXECUTED` lifecycle record.
 - Wallet-connected public application and reproducible build/tests.

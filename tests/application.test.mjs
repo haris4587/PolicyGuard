@@ -41,6 +41,21 @@ test("fresh proposal actions use the active proposal and expose reviewer-roster 
   assert.doesNotMatch(source, /execute_action", \[DEMO_ID/);
 });
 
+test("application exposes source-authority, citation-reliability, and deadline controls", async () => {
+  const source = await readFile(new URL("../components/policyguard-app.tsx", import.meta.url), "utf8");
+  for (const token of [
+    '"register_source_authority"',
+    '"open_remediation_window"',
+    "proposalForm.deadlineMinutes",
+    "reliable_adjudication",
+    "Fetched-page citations",
+    "Exact source hostname",
+  ]) {
+    assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  assert.match(source, /"create_proposal"[^\n]*deadlineMinutes/);
+});
+
 test("deployment configuration targets stable Studionet", async () => {
   const deployment = JSON.parse(await readFile(new URL("../config/deployment.json", import.meta.url), "utf8"));
   assert.equal(deployment.chainId, 61999);

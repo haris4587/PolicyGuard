@@ -61,7 +61,9 @@ Call `bootstrap_demo`:
 
 Transaction value: `0`. Wait for successful finalization.
 
-### 2. Run Full Consensus
+The bootstrap records exact-host source authorities and a closed initial evidence deadline. Read `get_organization`, `get_source_authority`, and `get_proposal` to verify those fields before evaluation.
+
+### 2. Run Full Consensus after the deadline
 
 Call `start_evaluation`:
 
@@ -77,9 +79,18 @@ Required stored result:
 status: NON_COMPLIANT
 reason: Required security audit is missing.
 approval_count: 3
+deadline_satisfied: true
+citations_valid: true
+reliable_adjudication: true
 ```
 
-### 3. Append remediation
+Every citation must exactly match a URL in the returned `evidence_digests` with `status = VERIFIED` and `authenticated = true`.
+
+### 3. Open a remediation window
+
+Call `open_remediation_window("policyguard-demo-35000", new_evidence_deadline)` with a Unix timestamp at least 60 seconds and no more than 30 days in the future. Confirm that the proposal returns to `PENDING_EVIDENCE`, `deadline_revision` increments, and the old evaluation remains readable.
+
+### 4. Append remediation before the new deadline
 
 Call `add_evidence`:
 
@@ -91,11 +102,15 @@ Call `add_evidence`:
 | `evidence_url` | commit-pinned `demo/evidence/security-audit.md` raw URL |
 | `evidence_sha256` | `5bb64218abd8cb5896184328be586722a1d62e46ec363be40c803ba36e528f71` |
 
-### 4. Re-evaluate
+The caller must match the active demo owner source authority for `raw.githubusercontent.com` and `EVIDENCE`; the exact-host check is enforced on-chain.
+
+### 5. Re-evaluate after the new deadline
 
 Call `start_evaluation("policyguard-demo-35000")` again. Confirm evaluation sequence `2`, `previous_evaluation_id = policyguard-demo-35000:e1`, and that evaluation #1 remains readable.
 
-If the second result is `COMPLIANT`, `authorize_action` may be called. The contract recomputes the complete current binding before recording authorization.
+Attempting this call before the new deadline must revert. After the deadline, confirm evaluation sequence `2`, `previous_evaluation_id = policyguard-demo-35000:e1`, `citations_valid = true`, and `reliable_adjudication = true`; evaluation #1 must remain readable.
+
+Only then may `authorize_action` be called. The contract recomputes the complete current binding, including deadline and source-authority state, before recording authorization.
 
 ## Update deployment evidence
 

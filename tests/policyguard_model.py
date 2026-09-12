@@ -18,21 +18,69 @@ ALLOWED_TYPES = {
     "RISK_ASSESSMENT", "APPROVAL_BUNDLE", "PROCUREMENT_QUOTE", "IDENTITY",
     "DELIVERY_PROOF", "REMEDIATION", "CHALLENGE", "OTHER",
 }
+SOURCE_SCOPES = ALLOWED_TYPES | {"POLICY", "PROPOSAL", "EVIDENCE", "REVIEWER_APPROVAL"}
 
 
 def valid_sha256(value: str) -> bool:
     return len(value) == 64 and all(char in "0123456789abcdef" for char in value)
 
 
-def validate_url(value: str) -> bool:
-    parsed = urlparse(value)
+def canonical_hostname(value: str) -> str | None:
+    clean = value.strip().lower()
+    if len(clean) < 4 or len(clean) > 253 or "." not in clean or clean.startswith(".") or clean.endswith(".") or ".." in clean:
+        return None
+    if any(char not in "abcdefghijklmnopqrstuvwxyz0123456789-." for char in clean):
+        return None
+    if all(char in "0123456789." for char in clean):
+        return None
+    if any(not part or len(part) > 63 or part.startswith("-") or part.endswith("-") for part in clean.split(".")):
+        return None
+    blocked = {"localhost", "local", "internal", "invalid", "test"}
+    if clean in blocked or any(clean.endswith("." + suffix) for suffix in blocked):
+        return None
+    return clean
+
+
+def url_hostname(value: str) -> str | None:
+    try:
+        parsed = urlparse(value)
+        port = parsed.port
+    except ValueError:
+        return None
+    if value != value.strip() or not value.startswith("https://"):
+        return None
     if parsed.scheme != "https" or not parsed.netloc or not parsed.path.strip("/"):
-        return False
-    if parsed.query or parsed.fragment or "\\" in value:
-        return False
-    host = (parsed.hostname or "").lower()
-    blocked = ("localhost", "127.", "0.", "10.", "192.168.", "169.254.", "172.16.", "172.17.", "172.18.", "172.19.", "172.2", "172.30.", "172.31.")
-    return not any(host == item or host.startswith(item) for item in blocked)
+        return None
+    if parsed.query or parsed.fragment or "\\" in value or parsed.username or parsed.password or port:
+        return None
+    return canonical_hostname(parsed.hostname or "")
+
+
+def validate_url(value: str) -> bool:
+    return url_hostname(value) is not None
+
+
+def source_authorized(*, url: str, allowed_hostname: str, caller: str, issuer_wallet: str, scope: str, allowed_scopes: list[str], active: bool = True) -> bool:
+    hostname = url_hostname(url)
+    return bool(
+        active
+        and hostname is not None
+        and hostname == canonical_hostname(allowed_hostname)
+        and caller.lower() == issuer_wallet.lower()
+        and (scope.upper() in allowed_scopes or (scope.upper() in ALLOWED_TYPES and "EVIDENCE" in allowed_scopes))
+    )
+
+
+def citations_are_fetched(citations: list[str], fetched_urls: list[str]) -> bool:
+    return bool(citations) and all(url in fetched_urls for url in citations)
+
+
+def adjudication_reliable(*, sources_authenticated: bool, citations: list[str], fetched_urls: list[str], evaluated_at: int, evidence_deadline: int) -> bool:
+    return bool(
+        sources_authenticated
+        and citations_are_fetched(citations, fetched_urls)
+        and evaluated_at >= evidence_deadline
+    )
 
 
 def canonical_hash(value: object) -> str:
@@ -81,16 +129,11 @@ def can_authorize(*, latest_status: str, evaluated_binding: str, current_binding
 
 @dataclass
 class WorkflowModel:
-    """Small deterministic lifecycle model used for the mapped workflow test.
+    """Deterministic reference for the contract's trust and lifecycle gates."""
 
-    The deployed contract owns persistence and consensus execution.  This model
-    deliberately covers only the deterministic state transitions around those
-    calls so the repository can prove that a fresh organization, policy, and
-    proposal are wired through roster setup, evidence, evaluation,
-    authorization, and execution without a live validator network.
-    """
-
+    now: int = 1_800_000_000
     organizations: dict[str, dict] = field(default_factory=dict)
+    source_authorities: dict[tuple[str, str], dict] = field(default_factory=dict)
     policies: dict[tuple[str, str, int], dict] = field(default_factory=dict)
     proposals: dict[str, dict] = field(default_factory=dict)
     evaluations: dict[str, dict] = field(default_factory=dict)
@@ -104,6 +147,8 @@ class WorkflowModel:
             "name": name,
             "owner": owner.lower(),
             "reviewers": [],
+            "source_authority_ids": [],
+            "source_authority_revision": 0,
             "policy_id": "",
             "current_policy_version": 0,
         }
@@ -117,6 +162,60 @@ class WorkflowModel:
             raise ValueError("Reviewer is already registered")
         organization["reviewers"].append(reviewer)
 
+    def register_source_authority(
+        self,
+        *,
+        organization_id: str,
+        authority_id: str,
+        hostname: str,
+        issuer_wallet: str,
+        scopes: list[str],
+        caller: str,
+    ) -> None:
+        organization = self.organizations[organization_id]
+        if caller.lower() != organization["owner"]:
+            raise ValueError("Only the organization owner can register source authorities")
+        clean_hostname = canonical_hostname(hostname)
+        clean_scopes = [scope.upper() for scope in scopes]
+        if clean_hostname is None or not clean_scopes or any(scope not in SOURCE_SCOPES for scope in clean_scopes):
+            raise ValueError("Invalid source authority")
+        key = (organization_id, authority_id)
+        if key in self.source_authorities:
+            raise ValueError("Source authority ID has already been used")
+        self.source_authorities[key] = {
+            "authority_id": authority_id,
+            "hostname": clean_hostname,
+            "issuer_wallet": issuer_wallet.lower(),
+            "scopes": clean_scopes,
+            "active": True,
+        }
+        organization["source_authority_ids"].append(authority_id)
+        organization["source_authority_revision"] += 1
+
+    def revoke_source_authority(self, *, organization_id: str, authority_id: str, caller: str) -> None:
+        organization = self.organizations[organization_id]
+        if caller.lower() != organization["owner"]:
+            raise ValueError("Only the organization owner can revoke source authorities")
+        authority = self.source_authorities[(organization_id, authority_id)]
+        authority["active"] = False
+        organization["source_authority_revision"] += 1
+
+    def _authenticate(self, *, organization_id: str, url: str, scope: str, caller: str) -> str:
+        organization = self.organizations[organization_id]
+        for authority_id in organization["source_authority_ids"]:
+            authority = self.source_authorities[(organization_id, authority_id)]
+            if source_authorized(
+                url=url,
+                allowed_hostname=authority["hostname"],
+                caller=caller,
+                issuer_wallet=authority["issuer_wallet"],
+                scope=scope,
+                allowed_scopes=authority["scopes"],
+                active=authority["active"],
+            ):
+                return authority_id
+        raise ValueError("Source URL, issuer wallet, and scope are not authorized by the organization")
+
     def register_policy_version(
         self,
         *,
@@ -127,6 +226,7 @@ class WorkflowModel:
         required_approvals: int,
         required_document_types: list[str],
         baseline_document_types: list[str],
+        policy_url: str,
         caller: str,
     ) -> None:
         organization = self.organizations[organization_id]
@@ -136,6 +236,9 @@ class WorkflowModel:
         if version != expected:
             raise ValueError("Policy versions must be registered sequentially")
         key = (organization_id, policy_id, version)
+        source_authority_id = self._authenticate(
+            organization_id=organization_id, url=policy_url, scope="POLICY", caller=caller
+        )
         self.policies[key] = {
             "organization_id": organization_id,
             "policy_id": policy_id,
@@ -144,6 +247,8 @@ class WorkflowModel:
             "required_approvals_above_threshold": required_approvals,
             "required_document_types_above_threshold": [item.upper() for item in required_document_types],
             "baseline_document_types": [item.upper() for item in baseline_document_types],
+            "policy_url": policy_url,
+            "source_authority_id": source_authority_id,
         }
         organization["policy_id"] = policy_id
         organization["current_policy_version"] = version
@@ -158,12 +263,19 @@ class WorkflowModel:
         amount_usd: int,
         proposer: str,
         executor: str,
+        proposal_url: str,
+        evidence_deadline: int,
     ) -> None:
         organization = self.organizations[organization_id]
         if proposal_id in self.proposals:
             raise ValueError("Proposal ID has already been used")
         if (organization["policy_id"], int(organization["current_policy_version"])) != (policy_id, policy_version):
             raise ValueError("Proposal must bind to the organization's current policy version")
+        if evidence_deadline <= self.now:
+            raise ValueError("Evidence deadline must be in the future")
+        source_authority_id = self._authenticate(
+            organization_id=organization_id, url=proposal_url, scope="PROPOSAL", caller=proposer
+        )
         proposal = {
             "proposal_id": proposal_id,
             "organization_id": organization_id,
@@ -172,6 +284,8 @@ class WorkflowModel:
             "requested_amount_usd": amount_usd,
             "proposer": proposer.lower(),
             "authorized_executor": executor.lower(),
+            "proposal_url": proposal_url,
+            "proposal_source_authority_id": source_authority_id,
             "status": "PENDING_EVIDENCE",
             "evidence": [],
             "approval_reviewers": [],
@@ -180,6 +294,8 @@ class WorkflowModel:
             "latest_verdict": "UNEVALUATED",
             "authorization_id": "",
             "input_revision": 0,
+            "evidence_deadline": evidence_deadline,
+            "deadline_revision": 1,
         }
         proposal["proposal_digest"] = canonical_hash({
             "proposal_id": proposal_id,
@@ -187,6 +303,10 @@ class WorkflowModel:
             "policy_id": policy_id,
             "policy_version": policy_version,
             "requested_amount_usd": amount_usd,
+            "proposal_url": proposal_url,
+            "evidence_deadline": evidence_deadline,
+            "deadline_revision": 1,
+            "proposal_source_authority_id": source_authority_id,
         })
         self.proposals[proposal_id] = proposal
 
@@ -200,43 +320,76 @@ class WorkflowModel:
         proposal["status"] = "PENDING_EVIDENCE"
         proposal["authorization_id"] = ""
 
-    def approve_proposal(self, *, proposal_id: str, reviewer: str) -> None:
+    def approve_proposal(self, *, proposal_id: str, reviewer: str, proof_url: str) -> None:
         proposal = self._proposal(proposal_id)
         organization = self.organizations[proposal["organization_id"]]
         reviewer = reviewer.lower()
         if reviewer not in organization["reviewers"]:
             raise ValueError("Only a registered reviewer can approve this proposal")
+        if self.now >= proposal["evidence_deadline"]:
+            raise ValueError("The evidence deadline has passed")
         if reviewer in proposal["approval_reviewers"]:
             raise ValueError("This reviewer has already approved the proposal")
+        source_authority_id = self._authenticate(
+            organization_id=proposal["organization_id"], url=proof_url,
+            scope="REVIEWER_APPROVAL", caller=reviewer,
+        )
         proposal["approval_reviewers"].append(reviewer)
+        proposal.setdefault("approval_sources", []).append(source_authority_id)
         self._invalidate_after_input_change(proposal)
 
-    def add_evidence(self, *, proposal_id: str, evidence_id: str, evidence_type: str, caller: str) -> None:
+    def add_evidence(self, *, proposal_id: str, evidence_id: str, evidence_type: str, evidence_url: str, caller: str) -> None:
         proposal = self._proposal(proposal_id)
-        if caller.lower() not in (
-            self.organizations[proposal["organization_id"]]["owner"],
-            proposal["proposer"],
-        ):
-            raise ValueError("Only the organization owner or proposer can add evidence")
+        if self.now >= proposal["evidence_deadline"]:
+            raise ValueError("The evidence deadline has passed")
         if any(item["evidence_id"] == evidence_id for item in proposal["evidence"]):
             raise ValueError("Evidence ID has already been used for this proposal")
-        proposal["evidence"].append({"evidence_id": evidence_id, "type": evidence_type.upper()})
+        source_authority_id = self._authenticate(
+            organization_id=proposal["organization_id"], url=evidence_url,
+            scope=evidence_type, caller=caller,
+        )
+        proposal["evidence"].append({
+            "evidence_id": evidence_id,
+            "type": evidence_type.upper(),
+            "url": evidence_url,
+            "source_authority_id": source_authority_id,
+        })
+        self._invalidate_after_input_change(proposal)
+
+    def open_remediation_window(self, *, proposal_id: str, new_deadline: int, caller: str) -> None:
+        proposal = self._proposal(proposal_id)
+        organization = self.organizations[proposal["organization_id"]]
+        if caller.lower() != organization["owner"]:
+            raise ValueError("Only the organization owner can open a remediation window")
+        if proposal["status"] not in {"NON_COMPLIANT", "NEEDS_REVIEW"}:
+            raise ValueError("Remediation requires a finalized evaluation")
+        if self.now < proposal["evidence_deadline"] or new_deadline < self.now + 60:
+            raise ValueError("Invalid remediation deadline")
+        proposal["evidence_deadline"] = new_deadline
+        proposal["deadline_revision"] += 1
+        proposal["proposal_digest"] = canonical_hash({
+            "proposal_id": proposal["proposal_id"],
+            "evidence_deadline": new_deadline,
+            "deadline_revision": proposal["deadline_revision"],
+        })
         self._invalidate_after_input_change(proposal)
 
     def _binding(self, proposal: dict) -> str:
         policy = self.policies[(proposal["organization_id"], proposal["policy_id"], proposal["policy_version"])]
-        evidence_digest = canonical_hash(sorted(item["type"] for item in proposal["evidence"]))
-        approval_digest = canonical_hash(sorted(proposal["approval_reviewers"]))
+        evidence_digest = canonical_hash(sorted((item["type"], item["source_authority_id"]) for item in proposal["evidence"]))
+        approval_digest = canonical_hash(sorted(zip(proposal["approval_reviewers"], proposal.get("approval_sources", []))))
         return binding_digest(
-            policy_digest=canonical_hash(policy),
+            policy_digest=canonical_hash({**policy, "source_authority_revision": self.organizations[proposal["organization_id"]]["source_authority_revision"]}),
             proposal_digest=proposal["proposal_digest"],
             evidence_digest=evidence_digest,
             approval_digest=approval_digest,
             revision=proposal["input_revision"],
         )
 
-    def start_evaluation(self, *, proposal_id: str) -> dict:
+    def start_evaluation(self, *, proposal_id: str, citations: list[str] | None = None, fetched_urls: list[str] | None = None) -> dict:
         proposal = self._proposal(proposal_id)
+        if self.now < proposal["evidence_deadline"]:
+            raise ValueError("Reliable adjudication cannot begin before the evidence deadline")
         policy = self.policies[(proposal["organization_id"], proposal["policy_id"], proposal["policy_version"])]
         required_types = list(policy["baseline_document_types"])
         if proposal["requested_amount_usd"] > policy["approval_threshold_usd"]:
@@ -256,6 +409,20 @@ class WorkflowModel:
         if missing_types:
             reason = "Required security audit is missing." if "AUDIT" in missing_types else "Required supporting documentation is missing."
             verdict = {"status": "NON_COMPLIANT", "reason": reason}
+        supplied_citations = citations if citations is not None else [policy["policy_url"], proposal["proposal_url"]]
+        authenticated_pages = fetched_urls if fetched_urls is not None else [policy["policy_url"], proposal["proposal_url"], *[item["url"] for item in proposal["evidence"]]]
+        reliable = adjudication_reliable(
+            sources_authenticated=True,
+            citations=supplied_citations,
+            fetched_urls=authenticated_pages,
+            evaluated_at=self.now,
+            evidence_deadline=proposal["evidence_deadline"],
+        )
+        if not reliable:
+            verdict = {
+                "status": "NEEDS_REVIEW",
+                "reason": "Consensus citations were missing or did not match authenticated fetched pages.",
+            }
         sequence = len(proposal["evaluation_history"]) + 1
         evaluation_id = f"{proposal_id}:e{sequence}"
         record = {
@@ -265,6 +432,11 @@ class WorkflowModel:
             "previous_evaluation_id": proposal["latest_evaluation_id"],
             "input_revision": proposal["input_revision"],
             "binding_digest": self._binding(proposal),
+            "citations": [url for url in supplied_citations if url in authenticated_pages],
+            "citations_valid": citations_are_fetched(supplied_citations, authenticated_pages),
+            "deadline_satisfied": self.now >= proposal["evidence_deadline"],
+            "reliable_adjudication": reliable,
+            "evaluated_at": self.now,
         }
         self.evaluations[evaluation_id] = record
         proposal["evaluation_history"].append(evaluation_id)
@@ -279,7 +451,12 @@ class WorkflowModel:
         if caller.lower() != organization["owner"]:
             raise ValueError("Only the organization owner can authorize the action")
         latest = self.evaluations[proposal["latest_evaluation_id"]]
-        if proposal["status"] != "COMPLIANT" or latest["binding_digest"] != self._binding(proposal):
+        if (
+            proposal["status"] != "COMPLIANT"
+            or latest["binding_digest"] != self._binding(proposal)
+            or latest.get("reliable_adjudication") is not True
+            or latest.get("evaluated_at", 0) < proposal["evidence_deadline"]
+        ):
             raise ValueError("Latest verdict is stale or not compliant")
         authorization_id = f"{proposal_id}:auth:{latest['evaluation_id']}"
         authorization = {
