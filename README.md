@@ -4,7 +4,7 @@
 
 PolicyGuard lets an organization commit versioned, human-written policies and uses GenLayer validators to decide whether a proposed action complies with those policies and authenticated real-world evidence. Deterministic contract logic binds exact source authorities, evidence deadlines, fetched-page citations, policy, proposal, evidence, and approval digests; a stale or unreliable verdict can never authorize execution.
 
-> Builder Project status: complete and live. The contract, both Full Consensus verdicts, authorization, execution record, and production frontend are verified on GenLayer Studionet.
+> Builder Project status: complete and live. The steward-hardened contract, both reliable Full Consensus verdicts, authorization, and execution record are verified on GenLayer Studionet.
 
 ## Live surfaces
 
@@ -13,10 +13,10 @@ PolicyGuard lets an organization commit versioned, human-written policies and us
 | Production application | [policyguard.ansaf1st33.chatgpt.site](https://policyguard.ansaf1st33.chatgpt.site) |
 | GitHub repository | [haris4587/PolicyGuard](https://github.com/haris4587/PolicyGuard) |
 | Network | GenLayer Studionet · chain `61999` |
-| Contract | [`0xdD7D…7964`](https://explorer-studio.genlayer.com/address/0xdD7D1EaC2A2F09602734BC7D6Bb1897ED4487964) |
-| Deployment transaction | [`0x0bb9…b6e3`](https://explorer-studio.genlayer.com/tx/0x0bb9dbcd8741512b277c1b83f87eaf9fda07ead0c9231802884dd7480d40b6e3) |
-| Missing-audit Full Consensus | [`0xbf95…39d2`](https://explorer-studio.genlayer.com/tx/0xbf95352e985cb1a454baaf44c52e260aefecbffc3fc1ca0186496cddd4e439d2) |
-| Corrected Full Consensus | [`0xeb42…b778`](https://explorer-studio.genlayer.com/tx/0xeb42736834489e3402f50ae945e0e6ca1a6972c892e0544d9080082b49f8b778) |
+| Contract | [`0xd1ff…bDa4`](https://explorer-studio.genlayer.com/address/0xd1ff82eeF6F8bcB7FAD0c96b9787A16Edf7ebDa4) |
+| Deployment transaction | [`0xc19d…9596`](https://explorer-studio.genlayer.com/tx/0xc19db98f79d63829701b98168257f48fcf3bb562036891f173f1129861699596) |
+| Missing-audit Full Consensus | [`0x860e…7788`](https://explorer-studio.genlayer.com/tx/0x860e7fc4b0e38dd4d79825d21979cb3fda70e901a45c645fa000103e83277788) |
+| Corrected Full Consensus | [`0x3d44…e45a`](https://explorer-studio.genlayer.com/tx/0x3d44dcf550ea491961a270709856ce29c7924640f5ba78a8eb78c3432812e45a) |
 
 The frontend never labels preview data as a live verdict. It reads finalized state from the verified address in `config/deployment.json`; every live write is signed by the connected browser wallet.
 
@@ -35,7 +35,7 @@ NON_COMPLIANT
 Required security audit is missing.
 ```
 
-The action remained blocked. After the SHA-256-bound audit was appended, evaluation #2 finalized as `COMPLIANT`, linked back to evaluation #1, and preserved both verdicts in the immutable history. The contract then recomputed the complete binding, authorized evaluation #2, and recorded the demo action as `EXECUTED`.
+The action remained blocked. The owner opened an on-chain remediation deadline and appended the SHA-256-bound audit through its registered exact-host authority. Only after that deadline did evaluation #2 finalize as reliable `COMPLIANT`, with every citation found among the validator-fetched pages and evaluation #1 preserved in immutable history. The contract then recomputed the complete binding, authorized evaluation #2, and recorded the demo action as `EXECUTED`.
 
 ## Why this needs GenLayer
 

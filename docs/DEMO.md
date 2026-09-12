@@ -34,7 +34,7 @@ PENDING_EVIDENCE
   → EXECUTED (authorized executor records completion)
 ```
 
-This exact lifecycle is live on Studionet at contract [`0xdD7D1EaC2A2F09602734BC7D6Bb1897ED4487964`](https://explorer-studio.genlayer.com/address/0xdD7D1EaC2A2F09602734BC7D6Bb1897ED4487964). The missing-audit evaluation is transaction [`0xbf95…39d2`](https://explorer-studio.genlayer.com/tx/0xbf95352e985cb1a454baaf44c52e260aefecbffc3fc1ca0186496cddd4e439d2); the corrected evaluation is [`0xeb42…b778`](https://explorer-studio.genlayer.com/tx/0xeb42736834489e3402f50ae945e0e6ca1a6972c892e0544d9080082b49f8b778).
+This exact lifecycle is live on Studionet at contract [`0xd1ff82eeF6F8bcB7FAD0c96b9787A16Edf7ebDa4`](https://explorer-studio.genlayer.com/address/0xd1ff82eeF6F8bcB7FAD0c96b9787A16Edf7ebDa4). The reliable missing-audit evaluation is transaction [`0x860e…7788`](https://explorer-studio.genlayer.com/tx/0x860e7fc4b0e38dd4d79825d21979cb3fda70e901a45c645fa000103e83277788); the post-remediation reliable evaluation is [`0x3d44…e45a`](https://explorer-studio.genlayer.com/tx/0x3d44dcf550ea491961a270709856ce29c7924640f5ba78a8eb78c3432812e45a). Both finalized records report `deadline_satisfied: true`, `citations_valid: true`, and `reliable_adjudication: true`.
 
 ## What the demo proves
 

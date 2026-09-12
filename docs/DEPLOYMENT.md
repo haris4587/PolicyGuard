@@ -15,10 +15,14 @@ PolicyGuard targets **stable GenLayer Studionet**, not the release-candidate Stu
 
 | Item | Value |
 |---|---|
-| Contract | [`0xdD7D1EaC2A2F09602734BC7D6Bb1897ED4487964`](https://explorer-studio.genlayer.com/address/0xdD7D1EaC2A2F09602734BC7D6Bb1897ED4487964) |
-| Deployment | [`0x0bb9dbcd8741512b277c1b83f87eaf9fda07ead0c9231802884dd7480d40b6e3`](https://explorer-studio.genlayer.com/tx/0x0bb9dbcd8741512b277c1b83f87eaf9fda07ead0c9231802884dd7480d40b6e3) |
-| Missing-audit evaluation | [`0xbf95352e985cb1a454baaf44c52e260aefecbffc3fc1ca0186496cddd4e439d2`](https://explorer-studio.genlayer.com/tx/0xbf95352e985cb1a454baaf44c52e260aefecbffc3fc1ca0186496cddd4e439d2) · `NON_COMPLIANT` |
-| Corrected evaluation | [`0xeb42736834489e3402f50ae945e0e6ca1a6972c892e0544d9080082b49f8b778`](https://explorer-studio.genlayer.com/tx/0xeb42736834489e3402f50ae945e0e6ca1a6972c892e0544d9080082b49f8b778) · `COMPLIANT` |
+| Contract | [`0xd1ff82eeF6F8bcB7FAD0c96b9787A16Edf7ebDa4`](https://explorer-studio.genlayer.com/address/0xd1ff82eeF6F8bcB7FAD0c96b9787A16Edf7ebDa4) |
+| Deployment | [`0xc19db98f79d63829701b98168257f48fcf3bb562036891f173f1129861699596`](https://explorer-studio.genlayer.com/tx/0xc19db98f79d63829701b98168257f48fcf3bb562036891f173f1129861699596) |
+| Missing-audit evaluation | [`0x860e7fc4b0e38dd4d79825d21979cb3fda70e901a45c645fa000103e83277788`](https://explorer-studio.genlayer.com/tx/0x860e7fc4b0e38dd4d79825d21979cb3fda70e901a45c645fa000103e83277788) · reliable `NON_COMPLIANT` |
+| Remediation deadline | [`0xf3d7c3be0a907a73316ca8f75b7ced59e4ad507e53e934e17190beb7a87f6e86`](https://explorer-studio.genlayer.com/tx/0xf3d7c3be0a907a73316ca8f75b7ced59e4ad507e53e934e17190beb7a87f6e86) |
+| Authenticated audit | [`0x0a7fb5542c641cf56ebd3ae380344a9dda85bf953692bffc0dc32674882ae21f`](https://explorer-studio.genlayer.com/tx/0x0a7fb5542c641cf56ebd3ae380344a9dda85bf953692bffc0dc32674882ae21f) |
+| Corrected evaluation | [`0x3d44dcf550ea491961a270709856ce29c7924640f5ba78a8eb78c3432812e45a`](https://explorer-studio.genlayer.com/tx/0x3d44dcf550ea491961a270709856ce29c7924640f5ba78a8eb78c3432812e45a) · reliable `COMPLIANT` |
+| Authorization | [`0x70a77d02cdccde755be04f2dfb166bea4a3c263863badcc17b614e9f6e63fc00`](https://explorer-studio.genlayer.com/tx/0x70a77d02cdccde755be04f2dfb166bea4a3c263863badcc17b614e9f6e63fc00) |
+| Execution | [`0x6e9979db81acd8e97d1cb83315879df7a8cf2e10f5885adee40eefdd86c75b8a`](https://explorer-studio.genlayer.com/tx/0x6e9979db81acd8e97d1cb83315879df7a8cf2e10f5885adee40eefdd86c75b8a) |
 | Final state | `EXECUTED` |
 
 ## Pre-deployment checks
